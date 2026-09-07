@@ -48,22 +48,22 @@ async function paintPhoto(sc, id) {
   /* 예정을 맨 앞에 둔다. 담아둔 사진을 열었을 때 제일 먼저 확인하고 싶은 게
      "이거 올리기로 한 거였지" 이지, 몇 건 썼는지가 아니다. */
   const state = isPlanned(p)
-    ? `<span class="pill plan">${ic('bookmark', 12, 2.6)}올릴 예정</span>`
+    ? `<span class="pill plan">${ic('bookmark', 12, 2.6)}업로드 예정</span>`
     : used
       ? `<span class="pill used">${ic('check', 13, 3)}사용됨 ${p.usages.length}건</span>`
       : isUnfiled(p) ? '<span class="pill todo">분류 필요</span>' : '<span class="pill unused">미사용</span>';
   sc.appendChild(el('div', 'statebar', `${state}<span class="fn">${esc(p.name || '')}</span>`));
 
-  /* 올릴 예정 토글 */
+  /* 업로드 예정 토글 */
   const plSec = el('div', 'sec');
   plSec.style.marginTop = '14px';
   const plBox = el('div', 'card');
   const planDesc = () => (p.plannedAt
     ? `${sug.fmtDate(p.plannedAt.slice(0, 10))}에 담아뒀어요`
-    : (used ? '다시 올릴 거면 담아두세요' : 'SNS에 올릴 사진으로 담아둡니다'));
+    : (used ? '다시 올릴 거면 담아두세요' : 'SNS에 업로드할 사진으로 담아둡니다'));
   const plRow = el('div', 'row',
     `<span class="row-ico plan">${ic('bookmark', 18, 2)}</span>`
-    + `<span class="grow"><span class="t">올릴 예정</span><span class="d">${esc(planDesc())}</span></span>`);
+    + `<span class="grow"><span class="t">업로드 예정</span><span class="d">${esc(planDesc())}</span></span>`);
   const plSw = el('button', 'sw' + (p.plannedAt ? ' on' : ''), '<i></i>');
   plSw.setAttribute('aria-pressed', String(!!p.plannedAt));
   plSw.onclick = () => {
@@ -76,11 +76,11 @@ async function paintPhoto(sc, id) {
     const pill = sc.querySelector('.statebar .pill');
     if (pill) {
       pill.className = 'pill ' + (on ? 'plan' : used ? 'used' : isUnfiled(p) ? 'todo' : 'unused');
-      pill.innerHTML = on ? `${ic('bookmark', 12, 2.6)}올릴 예정`
+      pill.innerHTML = on ? `${ic('bookmark', 12, 2.6)}업로드 예정`
         : used ? `${ic('check', 13, 3)}사용됨 ${p.usages.length}건`
           : isUnfiled(p) ? '분류 필요' : '미사용';
     }
-    toast(on ? '올릴 예정에 담았어요' : '예정을 해제했어요');
+    toast(on ? '업로드 예정에 담았어요' : '예정을 해제했어요');
     renderHome();
   };
   plRow.appendChild(plSw);

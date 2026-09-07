@@ -6,7 +6,7 @@ import { S, load, syncFiles, touch, flush, onSaved, photos, applyAccent } from '
 import * as sug from './suggest.js';
 import * as th from './thumbs.js';
 import { $, el, ic, fmt, toast, openSheet, closeSheet, confirmSheet } from './ui.js';
-import { V, renderAll, goTab, renderTabs, renderHome, renderPhotos, renderSettings, wirePhotoChrome } from './screens.js';
+import { V, renderAll, goTab, renderTabs, renderHome, renderPhotos, renderSettings, wirePhotoChrome, wireHomeSync } from './screens.js';
 
 const DEMO = new URLSearchParams(location.search).has('demo');
 
@@ -89,6 +89,7 @@ async function sync() {
   if (syncing) return;
   if (!S.cat.folders.length) { toast('먼저 폴더를 연결해 주세요'); return; }
   syncing = true;
+  syncBtn(true);
   const pg = progress('동기화', '드라이브 목록을 읽고 있어요. 사진은 수정하지 않습니다.');
   try {
     const files = await drive.listImages(
@@ -162,7 +163,18 @@ async function sync() {
     }
   } finally {
     syncing = false;
+    syncBtn(false);
   }
+}
+
+/* 동기화 중에는 헤더 버튼을 눌러도 아무 일이 없다(syncing 가드). 눌리는데
+   반응이 없으면 고장으로 보이므로 눌리지 않는 상태를 눈에 보이게 한다. */
+function syncBtn(busy) {
+  const b = document.getElementById('home-sync');
+  if (!b) return;
+  b.disabled = busy;
+  b.textContent = busy ? '동기화 중…' : '동기화';
+  b.style.opacity = busy ? '.45' : '';
 }
 
 function relogin() {
@@ -180,6 +192,7 @@ addEventListener('pagehide', () => { flush().catch(() => {}); });
 /* ---------- 부트 ---------- */
 async function wireShell() {
   wirePhotoChrome();
+  wireHomeSync();
   // 굴절 유리는 지원하는 브라우저에만. 사파리는 레이어드 CSS 유리로 남는다.
   try {
     const { attachGlass, supportsSvgBackdrop } = await import('./glass.js');
@@ -252,9 +265,15 @@ async function boot() {
     renderAll();
     goTab(resumed && ['home', 'photos', 'tags', 'settings'].includes(resumed) ? resumed : 'home');
 
-    if (S.cat.folders.length) {
-      // 목록 자체는 요청 2번이라 열 때마다 새로 대조해도 부담이 없다.
-      await sync();
+    /* 예전에는 여기서 무조건 sync() 를 돌렸다. 앱을 열 때마다 드라이브
+       목록을 통째로 다시 읽는 셈이라, 사진이 몇천 장이면 열 때마다 몇 초씩
+       기다렸고 429(요청 한도)도 곧잘 났다. 사진은 행사 다녀온 날에나 늘지
+       매시간 늘지 않는다. 그래서 동기화는 홈 헤더의 버튼으로 옮겼다.
+
+       한 번도 동기화한 적이 없을 때만 알려 준다 — 폴더만 붙여두고 사진이
+       안 보이면 고장으로 보이니까. */
+    if (S.cat.folders.length && !S.cat.syncedAt) {
+      setTimeout(() => toast('오른쪽 위 동기화를 눌러 사진을 불러오세요'), 600);
     }
   } catch (e) {
     if (e.needAuth) { showGate('다시 로그인해 주세요.'); return; }

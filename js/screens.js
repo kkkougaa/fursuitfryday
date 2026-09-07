@@ -151,6 +151,23 @@ export function renderHome() {
   keepScroll(sc, () => paintHome(sc));
 }
 
+/** 홈 헤더의 동기화 버튼. app.js 의 wireShell 에서 한 번만 배선한다. */
+export function wireHomeSync() {
+  const b = $('#home-sync');
+  if (b) b.onclick = () => V.onSync?.();
+}
+
+/** "3시간 전" 처럼. 방금 돌린 건지 어제 것인지가 지금 눌러야 할지를 정한다. */
+function agoText(iso) {
+  if (!iso) return '아직 동기화 안 함';
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return '방금 동기화함';
+  if (m < 60) return `${m}분 전 동기화`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전 동기화`;
+  return `${Math.floor(h / 24)}일 전 동기화`;
+}
+
 function paintHome(sc) {
   sc.innerHTML = '';
   const all = photos();
@@ -205,13 +222,19 @@ function paintHome(sc) {
      비었다고 사라지면 담아둔 걸 확인하는 방법을 잃는다. 대신 색은 빼서
      할 일이 없다는 걸 보이게 한다. */
   const b2 = el('button', 'strip' + (planned ? ' plan' : ''),
-    `<span class="k">올릴 예정인 사진</span><span class="v">${fmt(planned)}장</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
+    `<span class="k">업로드 예정인 사진</span><span class="v">${fmt(planned)}장</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
   b2.style.marginTop = unfiled ? '8px' : '0';
   b2.onclick = () => {
-    if (!planned) { toast('사진을 골라 올릴 예정으로 담아보세요'); return; }
+    if (!planned) { toast('사진을 골라 업로드 예정으로 담아보세요'); return; }
     V.filter = { ...NO_FILTER(), planned: true }; V.limit = 90; goTab('photos');
   };
   strips.appendChild(b2);
+
+  /* 마지막 동기화 시각. 자동 동기화를 뺐으니 지금 보는 숫자가 얼마나 오래된
+     것인지는 알려 줘야 한다. 이 줄을 눌러도 동기화가 돈다. */
+  const ago = el('button', 'synced', `${ic('refresh', 13, 2.2)}<span>${agoText(S.cat.syncedAt)}</span>`);
+  ago.onclick = () => V.onSync?.();
+  strips.appendChild(ago);
   sc.appendChild(strips);
 
   /* --- 축 --- */
@@ -533,7 +556,7 @@ function chipsHTML() {
   return [
     `<button class="chip${f.unfiled ? ' on' : ''}" data-c="unfiled">${f.unfiled ? ic('check', 14, 2.6) : ''}미분류만</button>`,
     `<button class="chip${f.unused ? ' on' : ''}" data-c="unused">${f.unused ? ic('check', 14, 2.6) : ''}미사용만</button>`,
-    `<button class="chip${f.planned ? ' on' : ''}" data-c="planned">${f.planned ? ic('check', 14, 2.6) : ic('bookmark', 13, 2.2)}올릴 예정</button>`,
+    `<button class="chip${f.planned ? ' on' : ''}" data-c="planned">${f.planned ? ic('check', 14, 2.6) : ic('bookmark', 13, 2.2)}업로드 예정</button>`,
     `<button class="chip${ev ? ' on' : ''}" data-c="event">${ev ? esc(ev.name) : '행사'}${ic('chev', 13, 2.4)}</button>`,
     `<button class="chip${sh ? ' on' : ''}" data-c="shooter">${sh ? esc(sh.name) : '사진사'}${ic('chev', 13, 2.4)}</button>`,
     `<button class="chip${pe ? ' on' : ''}" data-c="person">${pe ? esc(pe.name) : '퍼슈트'}${ic('chev', 13, 2.4)}</button>`,
@@ -671,7 +694,7 @@ function moreSheet() {
   const allPlanned = n > 0 && ids.every(id => isPlanned(S.cat.photos[id] || {}));
 
   openSheet(`<h3>${fmt(n)}장</h3><p class="lead">무엇을 할까요?</p><div class="opts">`
-    + `<button class="opt" data-a="plan"><span class="l">${allPlanned ? '올릴 예정 해제' : '올릴 예정으로 표시'}</span>${ic('bookmark', 17, 2.2)}</button>`
+    + `<button class="opt" data-a="plan"><span class="l">${allPlanned ? '업로드 예정 해제' : '업로드 예정으로 표시'}</span>${ic('bookmark', 17, 2.2)}</button>`
     + `<button class="opt" data-a="person"><span class="l">퍼슈트 지정</span>${ic('chev', 17, 2.2)}</button>`
     + `<button class="opt" data-a="tag"><span class="l">태그 적용</span>${ic('chev', 17, 2.2)}</button>`
     + `<button class="opt" data-a="use"><span class="l">사용 기록</span>${ic('chev', 17, 2.2)}</button>`
@@ -683,7 +706,7 @@ function moreSheet() {
     if (a === 'plan') {
       const changed = setPlanned(ids, !allPlanned);
       closeSheet();
-      toast(allPlanned ? `예정을 해제했어요 · ${fmt(changed)}장` : `올릴 예정에 담았어요 · ${fmt(changed)}장`);
+      toast(allPlanned ? `예정을 해제했어요 · ${fmt(changed)}장` : `업로드 예정에 담았어요 · ${fmt(changed)}장`);
       exitSelect();
       renderAll();
     } else if (a === 'person') assignSheet('person');

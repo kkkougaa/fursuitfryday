@@ -9,7 +9,7 @@
  */
 import * as drive from './drive.js';
 
-/* 5 에서 사진에 plannedAt(올릴 예정 표시 시각)이 붙었다. 없어도 되는 필드라
+/* 5 에서 사진에 plannedAt(업로드 예정 표시 시각)이 붙었다. 없어도 되는 필드라
    옛 catalog 를 그대로 읽어도 문제없다 — 표시가 없는 것으로 취급된다. */
 export const SCHEMA = 5;
 
@@ -87,7 +87,7 @@ export function emptyCatalog() {
 /* Photo = {
  *   md5, name, w, h, shotAt, cameraModel, lens, exposure, iso, size,
  *   event, shooter, people[], tags[], usages[{ch,url,date}],
- *   plannedAt        // "올릴 예정" 표시 시각(ISO). null 이면 표시 없음.
+ *   plannedAt        // "업로드 예정" 표시 시각(ISO). null 이면 표시 없음.
  * }
  *
  * plannedAt 을 불리언이 아니라 시각으로 둔 이유: 언제 담았는지가 정렬과
@@ -215,7 +215,7 @@ async function mergeFromServer() {
     mp.tags = [...new Set([...(mp.tags || []), ...(sp.tags || [])])];
     const seen = new Set((mp.usages || []).map(u => u.url));
     mp.usages = [...(mp.usages || []), ...(sp.usages || []).filter(u => !seen.has(u.url))];
-    /* 올릴 예정: 한쪽에만 있으면 살린다. 어느 기기가 더 최신인지 알 방법이
+    /* 업로드 예정: 한쪽에만 있으면 살린다. 어느 기기가 더 최신인지 알 방법이
        없는데, 지우는 쪽으로 기울면 다른 폰에서 담아둔 것이 조용히 사라진다.
        살리는 쪽이 틀렸을 때는 눈에 보이고 한 번 누르면 끝난다. */
     mp.plannedAt ??= sp.plannedAt ?? null;
@@ -335,14 +335,14 @@ function fmtExposure(t, ap) {
 export const photos = () => Object.entries(S.cat.photos).map(([id, p]) => ({ id, ...p }));
 export const isUsed = p => (p.usages || []).length > 0;
 
-/* 올릴 예정으로 담아둔 사진.
+/* 업로드 예정으로 담아둔 사진.
  *
  * 이미 올린 사진이어도 표시는 유지한다 — 다시 올릴 계획일 수 있다.
  * 대신 사용 이력을 기록하는 순간 표시를 자동으로 푼다(usageSheet). 담아둔
  * 사진을 올리고 나서 손으로 또 지우게 만들면 목록이 금세 못 믿을 것이 된다. */
 export const isPlanned = p => !!p.plannedAt;
 
-/** 여러 장의 "올릴 예정" 을 한 번에 켜고 끈다. @returns 실제로 바뀐 장수 */
+/** 여러 장의 "업로드 예정" 을 한 번에 켜고 끈다. @returns 실제로 바뀐 장수 */
 export function setPlanned(ids, on) {
   const now = new Date().toISOString();
   let n = 0;
