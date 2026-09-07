@@ -24,6 +24,7 @@ const P = {
   cal: 'M4 6h16v15H4z M8 3v4 M16 3v4 M4 11h16',
   trash: 'M5 7h14 M9 7V4.6h6V7 M7 7l1 13h8l1-13',
   spark: 'M12 4.5l1.9 4.6 4.6 1.9-4.6 1.9L12 17.5l-1.9-4.6L5.5 11l4.6-1.9z',
+  bookmark: 'M6.5 4.6h11v14.8L12 15.7l-5.5 3.7z',
 };
 
 export function ic(n, s = 20, w = 1.8) {

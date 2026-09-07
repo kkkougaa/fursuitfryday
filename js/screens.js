@@ -1,6 +1,7 @@
 /* screens.js — 화면 렌더 */
 import {
-  S, photos, isUsed, isUnfiled, eventById, shooterById, personById,
+  S, photos, isUsed, isUnfiled, isPlanned, setPlanned,
+  eventById, shooterById, personById,
   addEvent, addShooter, addPerson, normX, touch, flush, copyTextFor, channelOf, hashtagify,
   unknownShooter, UNKNOWN_SHOOTER, catColor,
 } from './store.js';
@@ -19,13 +20,13 @@ import {
 import { renderSchedule, ddayCard } from './schedule.js';
 import { fridayCard } from './friday.js';
 
-export const NO_FILTER = () => ({ unfiled: false, unused: false, event: null, shooter: null, person: null, tag: null });
-export const hasFilter = f => f.unfiled || f.unused || !!f.event || !!f.shooter || !!f.person || !!f.tag;
+export const NO_FILTER = () => ({ unfiled: false, unused: false, planned: false, event: null, shooter: null, person: null, tag: null });
+export const hasFilter = f => f.unfiled || f.unused || f.planned || !!f.event || !!f.shooter || !!f.person || !!f.tag;
 
 export const V = {
   tab: 'home',
   axis: 'event',
-  filter: { unfiled: false, unused: false, event: null, shooter: null, person: null, tag: null },
+  filter: { unfiled: false, unused: false, planned: false, event: null, shooter: null, person: null, tag: null },
   limit: 90,
   selecting: false,
   sel: new Set(),
@@ -188,16 +189,28 @@ function paintHome(sc) {
   const strips = el('div', 'sec stagger');
   strips.style.marginTop = '20px';
   const unfiled = all.filter(isUnfiled).length;
-  const unused = all.filter(p => !isUsed(p)).length;
+  const planned = all.filter(isPlanned).length;
 
   if (unfiled) {
     const b = el('button', 'strip blue', `<span class="k">행사·사진사를 정할 사진</span><span class="v">${fmt(unfiled)}장</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
     b.onclick = () => { V.filter = { ...NO_FILTER(), unfiled: true }; V.limit = 90; goTab('photos'); };
     strips.appendChild(b);
   }
-  const b2 = el('button', 'strip', `<span class="k">아직 안 올린 사진</span><span class="v">${fmt(unused)}장</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
+
+  /* 예전에는 "아직 안 올린 사진" 이 여기 있었다. 그 숫자는 대개 수백 장이라
+     보고도 할 일이 정해지지 않았다. 내가 올리기로 고른 것만 세는 편이
+     행동으로 이어진다. 미사용 전체는 사진 탭의 "미사용만" 칩에 남아 있다.
+
+     0장이어도 줄은 남긴다 — 홈에서 예정 목록으로 들어가는 길이 여기뿐이라,
+     비었다고 사라지면 담아둔 걸 확인하는 방법을 잃는다. 대신 색은 빼서
+     할 일이 없다는 걸 보이게 한다. */
+  const b2 = el('button', 'strip' + (planned ? ' plan' : ''),
+    `<span class="k">올릴 예정인 사진</span><span class="v">${fmt(planned)}장</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
   b2.style.marginTop = unfiled ? '8px' : '0';
-  b2.onclick = () => { V.filter = { ...NO_FILTER(), unused: true }; V.limit = 90; goTab('photos'); };
+  b2.onclick = () => {
+    if (!planned) { toast('사진을 골라 올릴 예정으로 담아보세요'); return; }
+    V.filter = { ...NO_FILTER(), planned: true }; V.limit = 90; goTab('photos');
+  };
   strips.appendChild(b2);
   sc.appendChild(strips);
 
@@ -466,6 +479,7 @@ function filtered() {
   return photos().filter(p => {
     if (f.unfiled && !isUnfiled(p)) return false;
     if (f.unused && isUsed(p)) return false;
+    if (f.planned && !isPlanned(p)) return false;
     if (f.event && p.event !== f.event) return false;
     if (f.shooter && p.shooter !== f.shooter) return false;
     if (f.person && !(p.people || []).includes(f.person)) return false;
@@ -519,6 +533,7 @@ function chipsHTML() {
   return [
     `<button class="chip${f.unfiled ? ' on' : ''}" data-c="unfiled">${f.unfiled ? ic('check', 14, 2.6) : ''}미분류만</button>`,
     `<button class="chip${f.unused ? ' on' : ''}" data-c="unused">${f.unused ? ic('check', 14, 2.6) : ''}미사용만</button>`,
+    `<button class="chip${f.planned ? ' on' : ''}" data-c="planned">${f.planned ? ic('check', 14, 2.6) : ic('bookmark', 13, 2.2)}올릴 예정</button>`,
     `<button class="chip${ev ? ' on' : ''}" data-c="event">${ev ? esc(ev.name) : '행사'}${ic('chev', 13, 2.4)}</button>`,
     `<button class="chip${sh ? ' on' : ''}" data-c="shooter">${sh ? esc(sh.name) : '사진사'}${ic('chev', 13, 2.4)}</button>`,
     `<button class="chip${pe ? ' on' : ''}" data-c="person">${pe ? esc(pe.name) : '퍼슈트'}${ic('chev', 13, 2.4)}</button>`,
@@ -528,9 +543,13 @@ function chipsHTML() {
 
 function cell(p) {
   const c = el('div', 'cell');
-  const badge = isUsed(p)
-    ? `<span class="bdg used">${ic('check', 13, 3)}</span>`
-    : '';
+  /* 예정 표시가 사용됨보다 앞선다 — 지금 손이 가야 할 상태가 무엇인지가
+     이미 끝난 일보다 먼저 보여야 한다. */
+  const badge = isPlanned(p)
+    ? `<span class="bdg plan">${ic('bookmark', 11, 2.6)}</span>`
+    : isUsed(p)
+      ? `<span class="bdg used">${ic('check', 13, 3)}</span>`
+      : '';
   const flag = isUnfiled(p) ? '<span class="flag">미분류</span>' : '';
   c.innerHTML = `<img data-fid="${p.id}" alt="${esc(p.name || '')}">${badge}${flag}`
     + `<span class="pick"><i>${ic('check', 12, 3)}</i></span>`;
@@ -553,6 +572,7 @@ export function wirePhotoChrome() {
     V.limit = 90;
     if (c === 'unfiled') { f.unfiled = !f.unfiled; renderPhotos(); }
     else if (c === 'unused') { f.unused = !f.unused; renderPhotos(); }
+    else if (c === 'planned') { f.planned = !f.planned; renderPhotos(); }
     else if (c === 'tag') { f.tag = null; renderPhotos(); }
     else if (c === 'event') pickSheet('행사 선택', S.cat.events.map(e2 => ({ v: e2.id, l: e2.name, n: photos().filter(p => p.event === e2.id).length })), f.event, v => { f.event = v; renderPhotos(); });
     else if (c === 'shooter') pickSheet('사진사 선택', S.cat.shooters.map(s => ({ v: s.id, l: s.name, n: photos().filter(p => p.shooter === s.id).length })), f.shooter, v => { f.shooter = v; renderPhotos(); });
@@ -644,8 +664,14 @@ function assignSheet(kind, after) {
 }
 
 function moreSheet() {
-  const n = V.sel.size;
+  const ids = [...V.sel];
+  const n = ids.length;
+  /* 고른 것이 전부 담겨 있으면 "해제", 아니면 "표시". 켜기·끄기를 따로
+     두면 매번 어느 쪽인지 읽고 골라야 한다. 상태를 보고 하나만 준다. */
+  const allPlanned = n > 0 && ids.every(id => isPlanned(S.cat.photos[id] || {}));
+
   openSheet(`<h3>${fmt(n)}장</h3><p class="lead">무엇을 할까요?</p><div class="opts">`
+    + `<button class="opt" data-a="plan"><span class="l">${allPlanned ? '올릴 예정 해제' : '올릴 예정으로 표시'}</span>${ic('bookmark', 17, 2.2)}</button>`
     + `<button class="opt" data-a="person"><span class="l">퍼슈트 지정</span>${ic('chev', 17, 2.2)}</button>`
     + `<button class="opt" data-a="tag"><span class="l">태그 적용</span>${ic('chev', 17, 2.2)}</button>`
     + `<button class="opt" data-a="use"><span class="l">사용 기록</span>${ic('chev', 17, 2.2)}</button>`
@@ -654,7 +680,13 @@ function moreSheet() {
     const b = e.target.closest('[data-a]');
     if (!b) return;
     const a = b.dataset.a;
-    if (a === 'person') assignSheet('person');
+    if (a === 'plan') {
+      const changed = setPlanned(ids, !allPlanned);
+      closeSheet();
+      toast(allPlanned ? `예정을 해제했어요 · ${fmt(changed)}장` : `올릴 예정에 담았어요 · ${fmt(changed)}장`);
+      exitSelect();
+      renderAll();
+    } else if (a === 'person') assignSheet('person');
     else if (a === 'tag') tagSheet([...V.sel], () => { exitSelect(); renderAll(); });
     else usageSheet([...V.sel], () => { exitSelect(); renderAll(); });
   };

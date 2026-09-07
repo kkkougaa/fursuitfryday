@@ -1,6 +1,7 @@
 /* screens2.js — 사진 상세, 사용하기, 태그·설정 계열 화면 */
 import {
-  S, photos, isUsed, isUnfiled, eventById, shooterById, personById,
+  S, photos, isUsed, isUnfiled, isPlanned, setPlanned,
+  eventById, shooterById, personById,
   normX, touch, flush, copyTextFor, channelOf, hashtagify, uid,
   unknownShooter, UNKNOWN_SHOOTER, CAT_COLORS, catColor, ACCENTS, applyAccent,
 } from './store.js';
@@ -44,10 +45,48 @@ async function paintPhoto(sc, id) {
   th.big(id, 1200).then(u => { if (u) { const i = shot.querySelector('img'); i.classList.remove('sk'); i.src = u; } });
 
   const used = isUsed(p);
-  const state = used
-    ? `<span class="pill used">${ic('check', 13, 3)}사용됨 ${p.usages.length}건</span>`
-    : isUnfiled(p) ? '<span class="pill todo">분류 필요</span>' : '<span class="pill unused">미사용</span>';
+  /* 예정을 맨 앞에 둔다. 담아둔 사진을 열었을 때 제일 먼저 확인하고 싶은 게
+     "이거 올리기로 한 거였지" 이지, 몇 건 썼는지가 아니다. */
+  const state = isPlanned(p)
+    ? `<span class="pill plan">${ic('bookmark', 12, 2.6)}올릴 예정</span>`
+    : used
+      ? `<span class="pill used">${ic('check', 13, 3)}사용됨 ${p.usages.length}건</span>`
+      : isUnfiled(p) ? '<span class="pill todo">분류 필요</span>' : '<span class="pill unused">미사용</span>';
   sc.appendChild(el('div', 'statebar', `${state}<span class="fn">${esc(p.name || '')}</span>`));
+
+  /* 올릴 예정 토글 */
+  const plSec = el('div', 'sec');
+  plSec.style.marginTop = '14px';
+  const plBox = el('div', 'card');
+  const planDesc = () => (p.plannedAt
+    ? `${sug.fmtDate(p.plannedAt.slice(0, 10))}에 담아뒀어요`
+    : (used ? '다시 올릴 거면 담아두세요' : 'SNS에 올릴 사진으로 담아둡니다'));
+  const plRow = el('div', 'row',
+    `<span class="row-ico plan">${ic('bookmark', 18, 2)}</span>`
+    + `<span class="grow"><span class="t">올릴 예정</span><span class="d">${esc(planDesc())}</span></span>`);
+  const plSw = el('button', 'sw' + (p.plannedAt ? ' on' : ''), '<i></i>');
+  plSw.setAttribute('aria-pressed', String(!!p.plannedAt));
+  plSw.onclick = () => {
+    // 화면 전체를 다시 그리면 스위치 애니메이션이 날아간다. 제자리에서 뒤집고
+    // 영향받는 부분(알약·설명·다른 화면)만 손댄다.
+    const on = flipSwitch(plSw, !p.plannedAt);
+    setPlanned([id], on);
+    const d = plRow.querySelector('.d');
+    if (d) d.textContent = planDesc();
+    const pill = sc.querySelector('.statebar .pill');
+    if (pill) {
+      pill.className = 'pill ' + (on ? 'plan' : used ? 'used' : isUnfiled(p) ? 'todo' : 'unused');
+      pill.innerHTML = on ? `${ic('bookmark', 12, 2.6)}올릴 예정`
+        : used ? `${ic('check', 13, 3)}사용됨 ${p.usages.length}건`
+          : isUnfiled(p) ? '분류 필요' : '미사용';
+    }
+    toast(on ? '올릴 예정에 담았어요' : '예정을 해제했어요');
+    renderHome();
+  };
+  plRow.appendChild(plSw);
+  plBox.appendChild(plRow);
+  plSec.appendChild(plBox);
+  sc.appendChild(plSec);
 
   /* 행사 · 작가 */
   const cls = el('div', 'sec');
@@ -307,10 +346,17 @@ export function usageSheet(ids, after) {
     const url = inp.value.trim().replace(/^https?:\/\//, '');
     if (!url) { inp.focus(); det.innerHTML = `${ic('info', 15)}<span style="color:var(--blue);font-weight:700">링크를 입력해 주세요.</span>`; return; }
     const date = $('#u-date').value || today;
-    ids.forEach(i => { const p = S.cat.photos[i]; if (p) (p.usages ||= []).push({ ch: channelOf(url) || 'etc', url, date }); });
+    let unplanned = 0;
+    ids.forEach(i => {
+      const p = S.cat.photos[i];
+      if (!p) return;
+      (p.usages ||= []).push({ ch: channelOf(url) || 'etc', url, date });
+      // 올렸으면 예정은 끝난 것이다. 손으로 또 지우게 두면 목록이 못 믿을 게 된다.
+      if (p.plannedAt) { p.plannedAt = null; unplanned++; }
+    });
     touch();
     closeSheet();
-    toast(`사용 이력을 저장했어요 · ${fmt(ids.length)}장`);
+    toast(`사용 이력을 저장했어요 · ${fmt(ids.length)}장${unplanned ? ' · 예정에서 뺐어요' : ''}`);
     after?.();
     renderAll();
   };
