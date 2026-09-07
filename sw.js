@@ -1,9 +1,10 @@
 /* sw.js — 앱 셸만 캐시한다.
  * 사진·목록·catalog 는 절대 캐시하지 않는다: 드라이브가 진실의 원천이고,
  * 오래된 목록을 보여주면 "사라진 사진" 판정이 틀어진다. */
-/* 배포할 때마다 올린다. 네트워크 우선이라 치명적이진 않지만,
-   오프라인 셸이 옛 파일에 묶이지 않게 한다. */
-const V = 'fursuitfryday-v1';
+/* ⚠ 배포할 때마다 이 숫자를 올린다. 안 올리면 iOS 홈 화면 앱이 옛 config.js
+   같은 파일을 계속 붙잡고 있어서, 코드를 고쳐도 반영이 안 된 것처럼 보인다.
+   특히 스코프처럼 config 에 들어가는 값을 바꿨을 때 증상이 헷갈린다. */
+const V = 'fursuitfryday-v2';
 const SHELL = [
   './', './index.html', './app.css', './manifest.webmanifest',
   './js/app.js', './js/auth.js', './js/avatar.js',
