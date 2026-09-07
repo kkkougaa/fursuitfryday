@@ -17,8 +17,8 @@ function showGate(msg) {
   shell.hidden = true;
   gate.hidden = false;
   gate.innerHTML = `<div class="mark">${ic('layers', 38, 2)}</div>`
-    + `<h1>컷대장</h1>`
-    + `<p>${msg || '행사 사진에 행사·작가를 붙이고,<br>어느 컷을 SNS에 올렸는지 기록합니다.'}</p>`;
+    + `<h1>#FursuitFryday</h1>`
+    + `<p>${msg || '행사 사진에 행사·사진사·퍼슈트를 붙이고,<br>어느 컷을 올렸는지 기록합니다.'}</p>`;
   const b = el('button', 'btn', '구글로 시작하기');
   b.style.maxWidth = '320px';
   b.onclick = () => auth.login({ resume: V.tab });

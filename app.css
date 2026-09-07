@@ -1,5 +1,5 @@
 /* ============================================================
-   컷대장 — 토스 톤 디자인 시스템 + 모션
+   #FursuitFryday — 토스 톤 디자인 시스템 + 모션
    흰 바닥 + 회색 면으로 위계를 만들고 테두리를 쓰지 않는다.
    블루는 액션에만. 상태색(초록/앰버)은 액센트와 분리.
    ============================================================ */
@@ -209,15 +209,15 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .more:active{transform:scale(.96)}
 
 
-/* ---------- 하단 탭바: 리퀴드 글라스 ----------
- * 유리는 뒤에 뭔가 지나가야 유리로 보인다. 그래서 흐름에서 빼내 띄우고,
- * 스크롤 영역 아래쪽에 여백을 줘서 내용이 유리 밑으로 지나가게 한다.
- *
- * 네 겹으로 쌓는다
- *   ❶ 본체   — 볼록한 돔. 위에서 들어온 빛이 위쪽을 밝히고 아래로 어두워진다
- *   ❷ ::before — 테두리에서 14px 만 남긴 베젤 링. 여기서만 더 세게 굴절시킨다
- *   ❸ 왜곡    — 링의 blur·saturate·brightness 를 본체보다 올려 빛이 꺾인 느낌
- *   ❹ ::after  — 1.2px 테두리에만 얇게 도는 반짝임(스펙큘러)
+/* ---------- 하단 탭바: 리퀴드 글라스 (사파리 기본 경로) ----------
+ * 사파리는 SVG 필터를 backdrop-filter 로 받지 못해 굴절을 만들 수 없다.
+ * 그래서 굴절을 흉내내려 blur 를 세게 먹이면 "서리 유리" 가 된다 —
+ * 그게 제일 안 좋다. 대신 **맑은 유리판** 으로 방향을 바꿌다.
+ *   · blur 는 6px 만 (뒤가 보이는 정도)
+ *   · 테두리 14px 밴드에서만 밝기·채도를 올려 빛이 꺾인 자리를 만든다
+ *   · 1px 테두리에 스펙큘러, 그 바로 안쪽에 아주 얇은 어두운 선
+ *     — 유리 두께가 만드는 그 선이 "유리답게" 보이는 핵심이다
+ *   · 밴드 양옆에 따뜻한/차가운 1px 을 겹쳐 분산을 아주 살짝 흉내낸다
  */
 :root{--bezel-w:14px}
 
@@ -226,24 +226,22 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .tabbar{
   position:absolute;left:10px;right:10px;bottom:calc(var(--safe-b) + 10px);
   display:flex;padding:6px 5px;z-index:7;border-radius:999px;isolation:isolate;
-  /* ❶ 볼록: 위쪽 하이라이트 → 중앙 투명 → 아래쪽 미세한 음영 */
   background:
-    radial-gradient(140% 180% at 50% -40%,
-      rgba(255,255,255,.60) 0%, rgba(255,255,255,.22) 30%,
-      rgba(255,255,255,.04) 55%, transparent 72%),
     linear-gradient(180deg,
-      rgba(255,255,255,.20) 0%, rgba(255,255,255,.02) 38%,
-      rgba(0,0,0,.02) 78%, rgba(0,0,0,.05) 100%),
-    color-mix(in srgb, var(--bg) 66%, transparent);
-  -webkit-backdrop-filter:blur(20px) saturate(175%);
-  backdrop-filter:blur(20px) saturate(175%);
+      rgba(255,255,255,.34) 0%, rgba(255,255,255,.10) 40%,
+      rgba(255,255,255,.04) 70%, rgba(255,255,255,.16) 100%),
+    color-mix(in srgb, var(--bg) 42%, transparent);
+  -webkit-backdrop-filter:blur(6px) saturate(180%);
+  backdrop-filter:blur(6px) saturate(180%);
   box-shadow:
-    0 0 0 .5px rgba(25,31,40,.09),
-    0 14px 36px -12px rgba(25,31,40,.28),
-    0 3px 10px -4px rgba(25,31,40,.14);
+    inset 0 0 0 .5px rgba(255,255,255,.72),      /* 유리 표면 */
+    inset 0 0 0 1.5px rgba(25,31,40,.05),        /* 두께가 만드는 어두운 선 */
+    0 0 0 .5px rgba(25,31,40,.10),
+    0 16px 40px -14px rgba(25,31,40,.30),
+    0 4px 12px -5px rgba(25,31,40,.16);
 }
 
-/* ❷❸ 베젤 링 — 테두리에서 14px 만 곡면. 링 안쪽(중앙)은 평평하게 둔다. */
+/* 베젤 밴드 — 테두리에서 14px 만. 여기서만 밝기·채도를 올린다. */
 .tabbar::before,
 .tabbar::after{
   content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
@@ -254,48 +252,47 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 }
 .tabbar::before{
   padding:var(--bezel-w);
-  /* 본체보다 세게 — 여기서만 빛이 꺾인다 */
-  -webkit-backdrop-filter:blur(7px) saturate(260%) brightness(1.07) contrast(1.05);
-  backdrop-filter:blur(7px) saturate(260%) brightness(1.07) contrast(1.05);
-  /* 바깥쪽으로 갈수록 압축된 밝은 띠 → 렌즈 가장자리처럼 */
-  background:
-    radial-gradient(120% 150% at 50% -30%, rgba(255,255,255,.42), transparent 58%),
-    linear-gradient(180deg, rgba(255,255,255,.14), transparent 46%, rgba(0,0,0,.05));
+  -webkit-backdrop-filter:brightness(1.10) saturate(230%) contrast(1.06);
+  backdrop-filter:brightness(1.10) saturate(230%) contrast(1.06);
+  background:linear-gradient(180deg, rgba(255,255,255,.18), transparent 52%, rgba(255,255,255,.10));
 }
 
-/* ❹ 테두리에만 얇게 도는 반짝임 */
+/* 테두리 스펙큘러 + 아주 옅은 분산 흉내 */
 .tabbar::after{
   padding:1.2px;
-  background:linear-gradient(142deg,
-    rgba(255,255,255,.98) 0%, rgba(255,255,255,.42) 22%,
-    rgba(255,255,255,.06) 46%, rgba(255,255,255,0) 60%,
-    rgba(255,255,255,.20) 82%, rgba(255,255,255,.55) 100%);
+  background:
+    linear-gradient(142deg,
+      rgba(255,255,255,1) 0%, rgba(255,255,255,.46) 20%,
+      rgba(255,214,190,.28) 34%,                 /* 따뜻한 쪽 */
+      rgba(255,255,255,0) 52%,
+      rgba(198,222,255,.30) 70%,                 /* 차가운 쪽 */
+      rgba(255,255,255,.30) 86%, rgba(255,255,255,.66) 100%);
 }
 
 @media (prefers-color-scheme:dark){
   .tabbar{
     background:
-      radial-gradient(140% 180% at 50% -40%,
-        rgba(255,255,255,.16) 0%, rgba(255,255,255,.06) 32%, transparent 68%),
-      linear-gradient(180deg, rgba(255,255,255,.06), transparent 40%, rgba(0,0,0,.16)),
-      color-mix(in srgb, var(--bg) 62%, transparent);
+      linear-gradient(180deg,
+        rgba(255,255,255,.13) 0%, rgba(255,255,255,.04) 42%,
+        rgba(0,0,0,.06) 72%, rgba(255,255,255,.05) 100%),
+      color-mix(in srgb, var(--bg) 38%, transparent);
     box-shadow:
-      0 0 0 .5px rgba(255,255,255,.09),
-      0 16px 40px -12px rgba(0,0,0,.72),
-      0 3px 10px -4px rgba(0,0,0,.5);
+      inset 0 0 0 .5px rgba(255,255,255,.20),
+      inset 0 0 0 1.5px rgba(0,0,0,.16),
+      0 0 0 .5px rgba(255,255,255,.08),
+      0 18px 44px -14px rgba(0,0,0,.78),
+      0 4px 12px -5px rgba(0,0,0,.5);
   }
   .tabbar::before{
-    -webkit-backdrop-filter:blur(7px) saturate(230%) brightness(1.16) contrast(1.04);
-    backdrop-filter:blur(7px) saturate(230%) brightness(1.16) contrast(1.04);
-    background:
-      radial-gradient(120% 150% at 50% -30%, rgba(255,255,255,.14), transparent 58%),
-      linear-gradient(180deg, rgba(255,255,255,.05), transparent 46%, rgba(0,0,0,.18));
+    -webkit-backdrop-filter:brightness(1.30) saturate(200%) contrast(1.05);
+    backdrop-filter:brightness(1.30) saturate(200%) contrast(1.05);
+    background:linear-gradient(180deg, rgba(255,255,255,.10), transparent 52%, rgba(255,255,255,.05));
   }
   .tabbar::after{
     background:linear-gradient(142deg,
-      rgba(255,255,255,.55) 0%, rgba(255,255,255,.20) 24%,
-      rgba(255,255,255,.03) 48%, rgba(255,255,255,0) 62%,
-      rgba(255,255,255,.10) 84%, rgba(255,255,255,.28) 100%);
+      rgba(255,255,255,.62) 0%, rgba(255,255,255,.24) 22%,
+      rgba(255,206,170,.16) 36%, rgba(255,255,255,0) 54%,
+      rgba(170,205,255,.18) 72%, rgba(255,255,255,.16) 88%, rgba(255,255,255,.36) 100%);
   }
 }
 

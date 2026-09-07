@@ -3,7 +3,7 @@
  * 오래된 목록을 보여주면 "사라진 사진" 판정이 틀어진다. */
 /* 배포할 때마다 올린다. 네트워크 우선이라 치명적이진 않지만,
    오프라인 셸이 옛 파일에 묶이지 않게 한다. */
-const V = 'cutdaejang-v2';
+const V = 'fursuitfryday-v1';
 const SHELL = [
   './', './index.html', './app.css', './manifest.webmanifest',
   './js/app.js', './js/auth.js', './js/avatar.js',

@@ -8,7 +8,8 @@ import { api, accessToken } from './auth.js';
 
 const FILES = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
-const CATALOG_NAME = 'cutdaejang.catalog.json';
+const CATALOG_NAME = 'fursuitfryday.catalog.json';
+const CATALOG_LEGACY = 'cutdaejang.catalog.json';   // 예전 이름도 찾아본다
 
 /* 목록에서 받아올 필드. fields 를 안 주면 id/name/mimeType 만 온다 — 최대 함정. */
 const PHOTO_FIELDS = [
@@ -77,14 +78,15 @@ export async function thumbBlob(file, size = 400) {
 
 export async function findCatalog() {
   const q = new URLSearchParams({
-    q: `name = '${CATALOG_NAME}' and trashed = false`,
+    q: `(name = '${CATALOG_NAME}' or name = '${CATALOG_LEGACY}') and trashed = false`,
     fields: 'files(id,name,version,modifiedTime,size)',
     pageSize: '10',
     spaces: 'drive',
   });
   const res = await api(`${FILES}?${q}`);
   const { files = [] } = await res.json();
-  return files[0] || null;
+  // 새 이름을 우선한다
+  return files.find(f => f.name === CATALOG_NAME) || files[0] || null;
 }
 
 export async function readCatalog(id) {

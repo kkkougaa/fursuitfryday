@@ -1,7 +1,7 @@
 {
-  "name": "컷대장",
-  "short_name": "컷대장",
-  "description": "행사 사진의 행사·작가를 정리하고 SNS 사용 이력을 기록합니다.",
+  "name": "#FursuitFryday",
+  "short_name": "#FursuitFryday",
+  "description": "행사 사진에 행사·사진사·퍼슈트를 붙이고, 어느 컷을 올렸는지 기록합니다.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
