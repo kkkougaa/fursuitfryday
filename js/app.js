@@ -32,10 +32,16 @@ function showShell() {
 }
 
 /* ---------- 진행 오버레이 ---------- */
-function progress(title, sub) {
+function progress(title, sub, onCancel) {
   const s = openSheet(`<h3>${title}</h3><p class="lead" id="pg-sub">${sub || ''}</p>`
     + `<div class="bar"><i id="pg-bar" style="width:8%"></i></div>`
-    + `<div class="lead" id="pg-n" style="margin:12px 0 0;text-align:center">준비 중…</div>`);
+    + `<div class="lead" id="pg-n" style="margin:12px 0 0;text-align:center">준비 중…</div>`
+    + (onCancel ? `<button class="btn sub" id="pg-stop" style="width:100%;margin-top:16px">중단</button>` : ''));
+  if (onCancel) {
+    const b = s.querySelector('#pg-stop');
+    // 누른 즉시 눌렀다는 걸 보여준다. 실제 중단은 진행 중인 묶음이 끝난 뒤다.
+    if (b) b.onclick = () => { b.disabled = true; b.textContent = '중단하는 중…'; onCancel(); };
+  }
   return {
     set(pct, text) {
       const b = s.querySelector('#pg-bar');
@@ -90,11 +96,17 @@ async function sync() {
   if (!S.cat.folders.length) { toast('먼저 폴더를 연결해 주세요'); return; }
   syncing = true;
   syncBtn(true);
-  const pg = progress('동기화', '드라이브 목록을 읽고 있어요. 사진은 수정하지 않습니다.');
+
+  /* 중단은 썸네일 준비 단계에만 걸린다. 목록 읽기와 저장은 중간에 끊으면
+     기록이 어중간해지므로 끝까지 간다 — 어차피 몇 초다. */
+  let stopThumbs = false;
+  const pg = progress('동기화', '드라이브 목록을 읽고 있어요. 사진은 수정하지 않습니다.',
+    () => { stopThumbs = true; });
+
   try {
     const files = await drive.listImages(
       S.cat.folders.map(f => f.id),
-      n => pg.set(Math.min(70, 8 + n / 30), `${fmt(n)}장 찾음`),
+      n => pg.set(Math.min(50, 6 + n / 40), `${fmt(n)}장 찾음`),
     );
     th.remember(files);
 
@@ -103,14 +115,29 @@ async function sync() {
     files.forEach(f => (f.parents || []).forEach(p => byParent.set(p, (byParent.get(p) || 0) + 1)));
     S.cat.folders.forEach(f => { f.count = byParent.get(f.id) ?? f.count ?? 0; });
 
-    pg.set(80, '기록과 대조하는 중…');
+    pg.set(55, '기록과 대조하는 중…');
     const r = syncFiles(files);
 
     // 사용자가 "앞으로 자동" 을 켠 카메라 규칙만 조용히 적용
     const auto = sug.applyRules(r.addedIds);
 
-    pg.set(92, '저장하는 중…');
+    /* 기록을 먼저 저장한다. 아래 썸네일 단계는 길고 중단할 수 있는데,
+       그때 분류 기록까지 날아가면 안 된다. */
+    pg.set(62, '저장하는 중…');
     await flush();
+
+    /* 썸네일 준비 — 아직 기기에 없는 것만 받아 IndexedDB 에 넣는다. 화면에
+       띄우지 않으므로 몇천 장을 돌려도 메모리가 늘지 않는다. 이미 받아둔
+       것은 건너뛰니 두 번째 동기화부터는 이 단계가 순식간에 끝난다. */
+    const pre = await th.prefetch(Object.keys(S.cat.photos), {
+      shouldStop: () => stopThumbs,
+      onProgress: ({ done, total, failed }) => {
+        if (!total) { pg.set(96, '썸네일은 이미 준비돼 있어요'); return; }
+        pg.set(65 + (done / total) * 31,
+          `썸네일 ${fmt(done)} / ${fmt(total)}장${failed ? ` · 실패 ${fmt(failed)}` : ''}`);
+      },
+    });
+
     pg.set(100, '완료');
     setTimeout(() => pg.done(), 260);
 
@@ -132,6 +159,11 @@ async function sync() {
 
     const bits = [`${fmt(r.total)}장`];
     if (r.added) bits.push(`새로 ${fmt(r.added)}장`);
+    if (pre.total) {
+      bits.push(stopThumbs
+        ? `썸네일 ${fmt(pre.done)}장까지`
+        : `썸네일 ${fmt(pre.done - pre.failed)}장 준비`);
+    }
     if (auto) bits.push(`자동 분류 ${fmt(auto)}장`);
     if (r.vanished) bits.push(`사라진 ${fmt(r.vanished)}장`);
     toast(bits.join(' · '));
@@ -189,6 +221,45 @@ onSaved(() => { if (V.tab === 'settings') renderSettings(); });
 addEventListener('visibilitychange', () => { if (document.hidden) flush().catch(() => {}); });
 addEventListener('pagehide', () => { flush().catch(() => {}); });
 
+/* ---------- 썸네일 미리 받기 ---------- */
+let prefetching = false;
+
+async function prefetchThumbs() {
+  if (prefetching) return;
+  const ids = Object.keys(S.cat.photos);
+  if (!ids.length) { toast('먼저 동기화로 사진 목록을 받아 주세요'); return; }
+  if (!th.known(ids[0])) { toast('먼저 동기화를 한 번 해주세요'); return; }
+
+  prefetching = true;
+  let stop = false;
+  const pg = progress('썸네일 미리 받기',
+    '기기에 저장해 둡니다. 사진은 화면에 띄우지 않으니 앱이 무거워지지 않아요.',
+    () => { stop = true; });
+
+  try {
+    const r = await th.prefetch(ids, {
+      shouldStop: () => stop,
+      onProgress: ({ done, total, failed }) => {
+        pg.set(total ? (done / total) * 100 : 100,
+          total ? `${fmt(done)} / ${fmt(total)}장${failed ? ` · 실패 ${fmt(failed)}` : ''}` : '받을 것이 없어요');
+      },
+    });
+    pg.done();
+    if (!r.total) toast('이미 전부 저장돼 있어요');
+    else if (stop) toast(`중단했어요 · ${fmt(r.done)}장 저장`);
+    else toast(`${fmt(r.done - r.failed)}장을 기기에 저장했어요${r.failed ? ` · 실패 ${fmt(r.failed)}` : ''}`);
+    renderSettings();
+  } catch (e) {
+    pg.done();
+    if (e.needAuth) return relogin();
+    if (e.needScope) return scopeSheet();
+    console.error(e);
+    toast('미리 받기에 실패했어요');
+  } finally {
+    prefetching = false;
+  }
+}
+
 /* ---------- 부트 ---------- */
 async function wireShell() {
   wirePhotoChrome();
@@ -216,6 +287,7 @@ async function bootDemo() {
   await wireShell();
   V.onSync = () => toast('데모 모드예요. 드라이브에 연결되지 않습니다');
   V.onPickFolders = () => toast('데모 모드예요. 폴더를 고를 수 없습니다');
+  V.onPrefetch = () => toast('데모 모드예요. 받아올 사진이 없습니다');
   V.onLogout = () => { location.search = ''; };
   renderAll();
   goTab('home');
@@ -252,6 +324,7 @@ async function boot() {
   await wireShell();
   V.onSync = sync;
   V.onPickFolders = pickFolders;
+  V.onPrefetch = prefetchThumbs;
   V.onLogout = () => confirmSheet({
     title: '로그아웃할까요?', danger: true, ok: '로그아웃',
     lead: '이 기기에서 토큰만 지웁니다. 드라이브의 catalog.json 은 그대로 남습니다.',

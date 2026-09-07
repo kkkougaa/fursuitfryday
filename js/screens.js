@@ -32,6 +32,7 @@ export const V = {
   sel: new Set(),
   onSync: null,   // app.js 가 주입
   onPickFolders: null,
+  onPrefetch: null,
 };
 
 const TABS = () => [

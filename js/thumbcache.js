@@ -69,6 +69,31 @@ export async function getMany(keys) {
   return out;
 }
 
+/**
+ * 이미 저장돼 있는 키만 골라낸다.
+ *
+ * get() 을 쓰면 blob 까지 메모리로 끌어오므로, 몇천 장을 훑는 미리 받기에는
+ * 쓸 수 없다. getKey() 는 키만 돌려주고 값은 건드리지 않는다.
+ */
+export async function hasMany(keys) {
+  const out = new Set();
+  if (!keys.length) return out;
+  // 몇천 개를 한 트랜잭션에 몰아넣으면 아이폰에서 버겁다. 잘라서 묻는다.
+  const CHUNK = 400;
+  for (let i = 0; i < keys.length; i += CHUNK) {
+    const part = keys.slice(i, i + CHUNK);
+    try {
+      const st = await tx('readonly');
+      await Promise.all(part.map(k => new Promise(res => {
+        const r = st.getKey(k);
+        r.onsuccess = () => { if (r.result != null) out.add(k); res(); };
+        r.onerror = () => res();
+      })));
+    } catch { /* 무시 — 없는 것으로 보고 다시 받는다 */ }
+  }
+  return out;
+}
+
 export async function count() {
   try {
     const st = await tx('readonly');

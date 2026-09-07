@@ -239,6 +239,54 @@ export async function blobOf(id, size = 1600) {
   return rawBlob(id, size);
 }
 
+/* ---------- 미리 받기 ---------- */
+
+/*
+ * 썸네일을 IndexedDB 에만 채운다. 화면에 그리지 않고, blob URL 도 만들지
+ * 않는다. 받은 blob 은 IDB 에 넣는 즉시 참조를 놓기 때문에 몇천 장을 돌려도
+ * 메모리가 늘지 않는다 — 그리드를 쭉 스크롤하는 것과 결정적으로 다른 점이다.
+ *
+ * 한 장씩 순서대로 하지는 않는다. 그러면 몇천 장에 몇십 분이 걸린다.
+ * 대신 작게 묶어(STEP) 처리하고 사이마다 한 박자 쉰다. 쉬는 동안 브라우저가
+ * 화면을 갱신하고 정리할 틈이 생겨, 진행 표시가 멈추지 않고 탭도 안 죽는다.
+ */
+const STEP = 4;
+
+export async function prefetch(ids, { onProgress, shouldStop } = {}) {
+  if (provider) return { done: 0, skipped: ids.length, failed: 0 };
+
+  // 이미 있는 것은 건너뛴다. 두 번째 실행이 즉시 끝나는 이유다.
+  const keys = ids.map(id => key(id, GRID));
+  const have = await store.hasMany(keys);
+  const todo = ids.filter((id, i) => !have.has(keys[i]) && meta.has(id));
+
+  const total = todo.length;
+  let done = 0;
+  let failed = 0;
+  onProgress?.({ done, total, failed });
+
+  for (let i = 0; i < todo.length; i += STEP) {
+    if (shouldStop?.()) break;
+    const batch = todo.slice(i, i + STEP);
+    await Promise.all(batch.map(async id => {
+      try {
+        const blob = await rawBlob(id, GRID);
+        if (blob) await store.put(key(id, GRID), blob);
+        else failed++;
+      } catch {
+        failed++;   // 한 장 실패로 전체를 멈추지 않는다
+      } finally {
+        done++;
+      }
+    }));
+    onProgress?.({ done, total, failed });
+    // 브라우저에게 숨 돌릴 틈을 준다
+    await new Promise(r => setTimeout(r, 40));
+  }
+
+  return { done, total, failed, skipped: ids.length - total };
+}
+
 export async function cacheInfo() {
   return { entries: await store.count() };
 }

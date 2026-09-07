@@ -577,6 +577,15 @@ function paintSettings(b) {
   });
   syb.appendChild(cacheRow);
 
+  /* 미리 받기 — 그리드를 끝까지 스크롤해서 채우는 것과 결과는 같지만,
+     화면에 띄우지 않으니 메모리가 안 늘고 중간에 튕기지 않는다. */
+  const preRow = el('button', 'row', `<span class="row-ico">${ic('cloud', 18)}</span>`
+    + `<span class="grow"><span class="t">썸네일 미리 받기</span>`
+    + `<span class="d">동기화 때 자동으로 해요 · 중단했다면 여기서 이어받기</span></span>`
+    + `<span class="chev">${ic('chev', 18, 2.1)}</span>`);
+  preRow.onclick = () => V.onPrefetch?.();
+  syb.appendChild(preRow);
+
   if (S.demo) {
     const dr = el('button', 'row', `<span class="row-ico" style="background:var(--amber-fill);color:var(--amber)">${ic('refresh', 18)}</span>`
       + `<span class="grow"><span class="t" style="color:var(--amber)">데모 데이터 초기화</span>`
