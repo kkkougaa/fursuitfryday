@@ -130,6 +130,7 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .row .n-sm{display:block;font-size:12.5px;font-weight:600;color:var(--g500);letter-spacing:-.02em;white-space:nowrap}
 .row .chev{flex:none;display:flex;color:var(--g400);margin-left:-4px}
 .row-ico{flex:none;width:38px;height:38px;border-radius:12px;background:var(--fill);display:flex;align-items:center;justify-content:center;color:var(--g600)}
+.row-ico.plan{background:var(--c-purple-f);color:var(--c-purple)}
 .thumb{flex:none;width:46px;height:46px;border-radius:14px;object-fit:cover;background:var(--fill-3);display:block}
 
 .row.big{padding:13px 14px}
@@ -150,6 +151,8 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .strip .chev{flex:none;display:flex;color:var(--g400);margin-right:-5px}
 .strip.blue{background:var(--blue-fill)}
 .strip.blue .k,.strip.blue .v,.strip.blue .chev{color:var(--blue)}
+.strip.plan{background:var(--c-purple-f)}
+.strip.plan .k,.strip.plan .v,.strip.plan .chev{color:var(--c-purple)}
 
 /* ---------- 세그먼트 ---------- */
 .segwrap{position:sticky;top:0;z-index:4;background:var(--bg);padding:14px 20px 10px}
@@ -194,6 +197,7 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .cell:active img{opacity:.7}
 .cell .bdg{position:absolute;right:5px;bottom:5px;width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 0 1.5px rgba(255,255,255,.5);animation:pop var(--d-2) var(--e-spring) both}
 .cell .bdg.used{background:#00B26B}
+.cell .bdg.plan{background:var(--c-purple)}
 .cell .bdg.near{background:#E58A00;font-size:11px;font-weight:800;line-height:1;padding-bottom:1px}
 .cell .cnt{position:absolute;left:5px;top:5px;height:18px;padding:0 6px;border-radius:9px;background:rgba(15,18,22,.58);color:#fff;font-size:11px;font-weight:700;line-height:18px;backdrop-filter:blur(4px)}
 .cell .flag{position:absolute;left:5px;bottom:5px;height:18px;padding:0 6px;border-radius:9px;background:rgba(229,138,0,.92);color:#fff;font-size:10.5px;font-weight:800;line-height:18px}
@@ -521,6 +525,7 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .pill.near{background:var(--amber-fill);color:var(--amber)}
 .pill.unused{background:var(--fill);color:var(--g600)}
 .pill.todo{background:var(--amber-fill);color:var(--amber)}
+.pill.plan{background:var(--c-purple-f);color:var(--c-purple)}
 .statebar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 20px 0}
 .statebar .fn{font-size:11.5px;font-weight:600;color:var(--g400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
