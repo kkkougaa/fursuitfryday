@@ -4,10 +4,10 @@
 export const CONFIG = {
   // Google Cloud Console → API 및 서비스 → 사용자 인증 정보
   // "OAuth 2.0 클라이언트 ID" (웹 애플리케이션) 의 클라이언트 ID
-  CLIENT_ID: '000000000000-xxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com',
+  CLIENT_ID: '194450792516-pgltrltqndm2tu7630bs7j84t3n704us.apps.googleusercontent.com',
 
   // 같은 화면의 "API 키". Google Picker 에 필요합니다.
-  API_KEY: 'AIzaSy...',
+  API_KEY: 'AIzaSyDLDkcdzepTBMfuUEbsQg8iKBiNSplrtVE',
 
   // 로그인 후 돌아올 주소. Cloud Console 의 "승인된 리디렉션 URI" 에
   // 아래 값과 **문자 하나까지 똑같이** 등록되어 있어야 합니다.

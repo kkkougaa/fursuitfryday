@@ -226,22 +226,24 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .tabbar{
   position:absolute;left:10px;right:10px;bottom:calc(var(--safe-b) + 10px);
   display:flex;padding:6px 5px;z-index:7;border-radius:999px;isolation:isolate;
+  /* 배경 처리는 **한 번만**. 중앙과 테두리가 같은 유리여야 경계가 안 생긴다. */
   background:
     linear-gradient(180deg,
-      rgba(255,255,255,.34) 0%, rgba(255,255,255,.10) 40%,
-      rgba(255,255,255,.04) 70%, rgba(255,255,255,.16) 100%),
-    color-mix(in srgb, var(--bg) 42%, transparent);
-  -webkit-backdrop-filter:blur(6px) saturate(180%);
-  backdrop-filter:blur(6px) saturate(180%);
+      rgba(255,255,255,.40) 0%, rgba(255,255,255,.16) 38%,
+      rgba(255,255,255,.10) 68%, rgba(255,255,255,.24) 100%),
+    color-mix(in srgb, var(--bg) 54%, transparent);
+  -webkit-backdrop-filter:blur(7px) saturate(185%);
+  backdrop-filter:blur(7px) saturate(185%);
   box-shadow:
-    inset 0 0 0 .5px rgba(255,255,255,.72),      /* 유리 표면 */
-    inset 0 0 0 1.5px rgba(25,31,40,.05),        /* 두께가 만드는 어두운 선 */
+    inset 0 0 0 .5px rgba(255,255,255,.80),      /* 유리 표면 */
+    inset 0 0 0 1.5px rgba(25,31,40,.055),       /* 두께가 만드는 어두운 선 */
     0 0 0 .5px rgba(25,31,40,.10),
     0 16px 40px -14px rgba(25,31,40,.30),
     0 4px 12px -5px rgba(25,31,40,.16);
 }
 
-/* 베젤 밴드 — 테두리에서 14px 만. 여기서만 밝기·채도를 올린다. */
+/* 베젤 밴드 — 테두리에서 14px 만. 배경을 다시 필터링하지 않고 그리기만 한다.
+   바깥으로 갈수록 밝아지는 띠 + 안쪽 경계에 아주 옅은 그늘 = 곡면처럼 읽힌다. */
 .tabbar::before,
 .tabbar::after{
   content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
@@ -252,9 +254,12 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 }
 .tabbar::before{
   padding:var(--bezel-w);
-  -webkit-backdrop-filter:brightness(1.10) saturate(230%) contrast(1.06);
-  backdrop-filter:brightness(1.10) saturate(230%) contrast(1.06);
-  background:linear-gradient(180deg, rgba(255,255,255,.18), transparent 52%, rgba(255,255,255,.10));
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,.34) 0%, rgba(255,255,255,.10) 42%,
+      rgba(255,255,255,.04) 62%, rgba(255,255,255,.20) 100%),
+    radial-gradient(120% 150% at 50% -25%, rgba(255,255,255,.28), transparent 62%);
+  box-shadow:inset 0 0 0 1px rgba(25,31,40,.035);
 }
 
 /* 테두리 스펙큘러 + 아주 옅은 분산 흉내 */
@@ -263,9 +268,9 @@ button.row:active{background:var(--tap);transform:scale(.985)}
   background:
     linear-gradient(142deg,
       rgba(255,255,255,1) 0%, rgba(255,255,255,.46) 20%,
-      rgba(255,214,190,.28) 34%,                 /* 따뜻한 쪽 */
+      rgba(255,214,190,.28) 34%,
       rgba(255,255,255,0) 52%,
-      rgba(198,222,255,.30) 70%,                 /* 차가운 쪽 */
+      rgba(198,222,255,.30) 70%,
       rgba(255,255,255,.30) 86%, rgba(255,255,255,.66) 100%);
 }
 
@@ -273,20 +278,23 @@ button.row:active{background:var(--tap);transform:scale(.985)}
   .tabbar{
     background:
       linear-gradient(180deg,
-        rgba(255,255,255,.13) 0%, rgba(255,255,255,.04) 42%,
-        rgba(0,0,0,.06) 72%, rgba(255,255,255,.05) 100%),
-      color-mix(in srgb, var(--bg) 38%, transparent);
+        rgba(255,255,255,.15) 0%, rgba(255,255,255,.05) 40%,
+        rgba(0,0,0,.05) 70%, rgba(255,255,255,.07) 100%),
+      color-mix(in srgb, var(--bg) 50%, transparent);
     box-shadow:
-      inset 0 0 0 .5px rgba(255,255,255,.20),
-      inset 0 0 0 1.5px rgba(0,0,0,.16),
+      inset 0 0 0 .5px rgba(255,255,255,.22),
+      inset 0 0 0 1.5px rgba(0,0,0,.18),
       0 0 0 .5px rgba(255,255,255,.08),
       0 18px 44px -14px rgba(0,0,0,.78),
       0 4px 12px -5px rgba(0,0,0,.5);
   }
   .tabbar::before{
-    -webkit-backdrop-filter:brightness(1.30) saturate(200%) contrast(1.05);
-    backdrop-filter:brightness(1.30) saturate(200%) contrast(1.05);
-    background:linear-gradient(180deg, rgba(255,255,255,.10), transparent 52%, rgba(255,255,255,.05));
+    background:
+      linear-gradient(180deg,
+        rgba(255,255,255,.13) 0%, rgba(255,255,255,.04) 44%,
+        rgba(0,0,0,.05) 64%, rgba(255,255,255,.07) 100%),
+      radial-gradient(120% 150% at 50% -25%, rgba(255,255,255,.10), transparent 62%);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.10);
   }
   .tabbar::after{
     background:linear-gradient(142deg,
