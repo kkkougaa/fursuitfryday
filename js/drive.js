@@ -33,8 +33,11 @@ export async function listImages(folderIds, onProgress) {
 
     let pageToken = '';
     do {
+      // 이미지와 하위 폴더만 달라고 못 박는다. drive.readonly 로 바뀌면서
+      // 폴더 안의 모든 파일이 보이게 됐으므로, 서버에서 걸러야 응답이 가볍다.
       const q = new URLSearchParams({
-        q: `'${id}' in parents and trashed = false`,
+        q: `'${id}' in parents and trashed = false`
+           + ` and (${IMAGE_Q} or mimeType = 'application/vnd.google-apps.folder')`,
         fields: `nextPageToken,files(${PHOTO_FIELDS},mimeType)`,
         pageSize: '1000',
         supportsAllDrives: 'true',
@@ -67,10 +70,25 @@ export async function getFile(id, fields = 'id,name,mimeType') {
 
 /** 썸네일을 blob URL 로. thumbnailLink 는 수명이 짧으니 저장하지 말고 그때그때 쓴다. */
 export async function thumbBlob(file, size = 400) {
-  const link = file.thumbnailLink
-    ? file.thumbnailLink.replace(/=s\d+(-c)?$/, `=s${size}`)
-    : `${FILES}/${file.id}?alt=media`;
-  const res = await api(link);
+  const media = `${FILES}/${file.id}?alt=media`;
+
+  /*
+   * thumbnailLink 는 lh3.googleusercontent.com 을 가리킨다. 여기에
+   * Authorization 헤더를 붙이면 프리플라이트가 붙고, 그 응답에
+   * Access-Control-Allow-Origin 이 없어 브라우저가 막는 경우가 있다.
+   * 실패하면 원본을 직접 받는 쪽으로 조용히 물러난다. 느리지만 확실하다.
+   */
+  if (file.thumbnailLink) {
+    const link = file.thumbnailLink.replace(/=s\d+(-c)?$/, `=s${size}`);
+    try {
+      // 썸네일 링크는 그 자체로 서명돼 있어 토큰이 필요 없다. 헤더를 빼면
+      // 단순 요청이 되어 프리플라이트도 CORS 거절도 피한다.
+      const res = await fetch(link);
+      if (res.ok) return URL.createObjectURL(await res.blob());
+    } catch { /* CORS·네트워크 — 아래로 */ }
+  }
+
+  const res = await api(media);
   return URL.createObjectURL(await res.blob());
 }
 

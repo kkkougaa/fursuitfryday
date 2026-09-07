@@ -13,15 +13,42 @@ const AUTH_EP = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_KEY = 'cd.token';
 const STATE_KEY = 'cd.oauth.state';
 const RESUME_KEY = 'cd.oauth.resume';
+const GRANT_KEY = 'cd.granted';   // 마지막으로 실제 동의받은 스코프 문자열
 
-let token = null; // { access_token, expires_at }
+/* 지금 필요한 스코프 목록. config 의 SCOPE 를 쪼개 둔다. */
+const REQUIRED = CONFIG.SCOPE.split(/\s+/).filter(Boolean);
 
+/** 받아온 스코프 문자열이 REQUIRED 를 전부 포함하는가 */
+function hasAll(granted) {
+  if (!granted) return false;
+  const g = new Set(granted.split(/\s+/).filter(Boolean));
+  return REQUIRED.every(s => g.has(s));
+}
+
+/** 이 브라우저가 현재 스코프 전부에 동의한 적이 있는가 */
+function everGranted() {
+  try { return hasAll(localStorage.getItem(GRANT_KEY)); } catch { return false; }
+}
+
+let token = null; // { access_token, expires_at, scope }
+
+/*
+ * 저장된 토큰은 아래 셋을 모두 만족해야 쓴다.
+ *   1) 존재하고  2) 30초 이상 남았고  3) 지금 필요한 스코프를 전부 갖고 있다
+ *
+ * 3번이 핵심이다. SCOPE 를 늘린 직후에는 예전 토큰이 "아직 유효"하지만
+ * 새 스코프가 없다. 그대로 쓰면 한 시간 내내 영문 모를 403 이 난다.
+ * 여기서 걸러 버리면 앱이 알아서 다시 로그인시킨다.
+ */
 function readStored() {
   try {
     const raw = localStorage.getItem(TOKEN_KEY);
     if (!raw) return null;
     const t = JSON.parse(raw);
-    return t && t.access_token && t.expires_at > Date.now() + 30_000 ? t : null;
+    if (!t || !t.access_token) return null;
+    if (t.expires_at <= Date.now() + 30_000) return null;
+    if (!hasAll(t.scope)) { localStorage.removeItem(TOKEN_KEY); return null; }
+    return t;
   } catch { return null; }
 }
 
@@ -62,9 +89,19 @@ export function consumeRedirect() {
     return { resumed: resume, error: 'state_mismatch' };
   }
 
+  // 구글이 실제로 내준 스코프. 요청한 것과 다를 수 있다(사용자가 체크를 뺀 경우).
+  const granted = p.get('scope') || '';
+  try { localStorage.setItem(GRANT_KEY, granted); } catch { /* 프라이빗 모드 */ }
+
+  if (!hasAll(granted)) {
+    // 사진 목록을 못 읽는 반쪽 상태로 들어가는 대신 여기서 끊는다.
+    return { resumed: resume, error: 'scope_denied' };
+  }
+
   store({
     access_token: at,
     expires_at: Date.now() + (Number(p.get('expires_in')) || 3600) * 1000,
+    scope: granted,
   });
   return { resumed: resume };
 }
@@ -88,12 +125,22 @@ export function login({ silent = false, resume = '' } = {}) {
     include_granted_scopes: 'true',
     state,
   });
-  if (silent) q.set('prompt', 'none');
+
+  if (silent) {
+    q.set('prompt', 'none');
+  } else if (!everGranted()) {
+    // 아직 이 스코프 조합에 동의한 적이 없다 — 스코프를 늘린 직후가 여기다.
+    // prompt 를 안 주면 구글이 "이미 동의했다"며 동의 화면을 건너뛰고
+    // 예전 스코프만 담긴 토큰을 되돌려준다. 그래서 한 번은 강제로 물어본다.
+    q.set('prompt', 'consent');
+  }
+
   location.assign(`${AUTH_EP}?${q}`);
 }
 
 export function logout() {
   store(null);
+  try { localStorage.removeItem(GRANT_KEY); } catch { /* 무시 */ }
 }
 
 export function isSignedIn() {
@@ -134,6 +181,17 @@ export async function api(url, opts = {}, tries = 0) {
   if (res.status === 401) {
     store(null);
     throw Object.assign(new Error('needAuth'), { needAuth: true });
+  }
+  // 403 은 두 종류다. 스코프가 모자라 거절당한 것(insufficientPermissions)과
+  // 잠깐 몰려서 막힌 것(rateLimitExceeded). 앞엣것은 재시도해도 소용없고
+  // 다시 동의를 받아야 하므로 needScope 로 구분해 올린다.
+  if (res.status === 403) {
+    const body = await res.clone().text().catch(() => '');
+    if (/insufficientPermissions|insufficientFilePermissions|accessNotConfigured/.test(body)) {
+      store(null);
+      try { localStorage.removeItem(GRANT_KEY); } catch { /* 무시 */ }
+      throw Object.assign(new Error('needScope'), { needScope: true, status: 403, body });
+    }
   }
   if ((res.status === 429 || res.status >= 500) && tries < 4) {
     return backoff(url, opts, tries, res);

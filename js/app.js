@@ -47,6 +47,23 @@ function progress(title, sub) {
   };
 }
 
+/* ---------- 권한 부족 안내 ---------- */
+/*
+ * drive.readonly 동의를 못 받았을 때 뜬다. 원인은 대개 둘 중 하나다.
+ *   - Cloud Console 동의 화면 스코프 목록에 drive.readonly 를 안 넣었다
+ *   - 동의 화면에서 사용자가 체크를 뺐다
+ */
+function scopeSheet() {
+  openSheet(
+    '<h3>사진을 읽을 권한이 없어요</h3>'
+    + '<p class="lead">고른 폴더 안을 읽으려면 드라이브 <b>보기 권한</b>이 필요합니다. '
+    + '동의 화면에서 체크를 빼셨거나, 아직 이 권한에 동의하지 않은 상태예요.</p>'
+    + '<button class="btn pri" id="scope-again">권한 다시 요청</button>'
+  );
+  const b = document.getElementById('scope-again');
+  if (b) b.onclick = () => auth.login({ resume: V.tab });
+}
+
 /* ---------- 폴더 선택 ---------- */
 async function pickFolders() {
   try {
@@ -59,6 +76,7 @@ async function pickFolders() {
     await sync();
   } catch (e) {
     if (e.needAuth) return relogin();
+    if (e.needScope) return scopeSheet();
     toast('폴더를 고르지 못했어요');
     console.error(e);
   }
@@ -95,6 +113,22 @@ async function sync() {
     pg.set(100, '완료');
     setTimeout(() => pg.done(), 260);
 
+    // 폴더는 붙었는데 한 장도 안 나오는 경우. 예전에는 여기서 아무 말이 없어
+    // "그냥 안 되네"로 끝났다. 권한 문제일 가능성이 가장 크므로 짚어 준다.
+    if (!files.length) {
+      // 진행 시트가 260ms 뒤에 닫히므로, 그 뒤에 띄워야 같이 사라지지 않는다.
+      setTimeout(() => {
+        openSheet(
+          '<h3>폴더는 연결됐는데 사진이 0장이에요</h3>'
+          + '<p class="lead">폴더가 비어 있거나, 앱에 드라이브 보기 권한이 없을 때 이렇게 됩니다. '
+          + '폴더에 사진이 있는 게 확실하다면 권한을 다시 받아 보세요.</p>'
+          + '<button class="btn pri" id="empty-again">권한 다시 요청</button>'
+        );
+        const b = document.getElementById('empty-again');
+        if (b) b.onclick = () => auth.login({ resume: V.tab });
+      }, 700);
+    }
+
     const bits = [`${fmt(r.total)}장`];
     if (r.added) bits.push(`새로 ${fmt(r.added)}장`);
     if (auto) bits.push(`자동 분류 ${fmt(auto)}장`);
@@ -115,13 +149,14 @@ async function sync() {
   } catch (e) {
     pg.done();
     if (e.needAuth) return relogin();
+    if (e.needScope) return scopeSheet();
     if (e.offline) { toast('네트워크에 연결되지 않았어요'); return; }
     console.error(e);
-    if (e.status === 404 || e.status === 403) {
-      openSheet(`<h3>폴더 안을 읽지 못했어요</h3>`
-        + `<p class="lead">고른 폴더의 하위 파일에 접근 권한이 없습니다. <b>drive.file</b> 스코프는 앱이 만든 파일과 피커에서 직접 고른 항목만 볼 수 있어서, `
-        + `폴더 선택으로 하위 파일까지 열리지 않는 계정 설정일 수 있습니다.<br><br>README 의 <b>"폴더 권한이 안 열릴 때"</b> 항목을 확인해 주세요.</p>`
-        + `<button class="btn" onclick="this.closest('#sheet').classList.remove('on');document.getElementById('scrim').classList.remove('on')">닫기</button>`);
+    if (e.status === 404) {
+      openSheet('<h3>폴더를 찾지 못했어요</h3>'
+        + '<p class="lead">연결한 폴더가 지워졌거나 다른 계정으로 옮겨졌을 수 있습니다. '
+        + '설정에서 연결을 끊고 다시 골라 주세요.</p>'
+        + '<button class="btn" onclick="this.closest(\'#sheet\').classList.remove(\'on\');document.getElementById(\'scrim\').classList.remove(\'on\')">닫기</button>');
     } else {
       toast('동기화에 실패했어요');
     }
@@ -188,6 +223,12 @@ async function boot() {
   const { resumed, error } = auth.consumeRedirect();
   if (error === 'interaction_required' || error === 'login_required' || error === 'consent_required') {
     showGate('다시 로그인해 주세요.');
+    return;
+  }
+  if (error === 'scope_denied') {
+    // 반쪽 권한으로 들어가면 "폴더는 붙는데 사진이 0장"인 상태가 된다.
+    // 아예 게이트에서 멈추고 다시 받게 한다.
+    showGate('사진을 읽으려면 드라이브 <b>보기 권한</b>이 필요합니다.<br>동의 화면에서 체크를 모두 켜 주세요.');
     return;
   }
   if (error && error !== 'access_denied') console.warn('oauth', error);
