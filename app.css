@@ -1,0 +1,964 @@
+/* ============================================================
+   컷대장 — 토스 톤 디자인 시스템 + 모션
+   흰 바닥 + 회색 면으로 위계를 만들고 테두리를 쓰지 않는다.
+   블루는 액션에만. 상태색(초록/앰버)은 액센트와 분리.
+   ============================================================ */
+
+:root{
+  --bg:#FFFFFF;
+  --fill:#F2F4F6;
+  --fill-2:#F9FAFB;
+  --fill-3:#E5E8EB;
+  --line:#F2F4F6;
+  --g900:#191F28;
+  --g700:#4E5968;
+  --g600:#6B7684;
+  --g500:#8B95A1;
+  --g400:#B0B8C1;
+  --blue:#3182F6;
+  --blue-press:#2272EB;
+  --blue-fill:#EBF3FE;
+  --green:#00B26B;
+  --green-fill:#E4F6EE;
+  --amber:#E58A00;
+  --amber-fill:#FDF1DE;
+  --red:#F04452;
+  --red-fill:#FDECEE;
+  --av1:#3182F6;--av2:#E5741B;--av3:#00A661;--av4:#7B5CE5;--av5:#E5476A;--av6:#0E8B98;
+  --on-blue:#FFFFFF;
+  --c-blue:#3182F6;   --c-blue-f:#EBF3FE;
+  --c-green:#00A661;  --c-green-f:#E4F6EE;
+  --c-amber:#E58A00;  --c-amber-f:#FDF1DE;
+  --c-red:#E5476A;    --c-red-f:#FDEBEF;
+  --c-purple:#7B5CE5; --c-purple-f:#F0EBFE;
+  --c-teal:#0E8B98;   --c-teal-f:#E3F3F5;
+  --c-pink:#D6409F;   --c-pink-f:#FCEAF6;
+  --c-gray:#6B7684;   --c-gray-f:#F2F4F6;
+  --card-shadow:0 1px 3px rgba(25,31,40,.06);
+  --sheet-shadow:0 -10px 40px rgba(25,31,40,.16);
+  --tap:rgba(25,31,40,.045);
+  --f:"Manrope","Gothic A1",-apple-system,BlinkMacSystemFont,system-ui,"Apple SD Gothic Neo",sans-serif;
+
+  /* motion */
+  --e-out:cubic-bezier(.32,.72,0,1);      /* iOS 감쇠 곡선 */
+  --e-in-out:cubic-bezier(.4,0,.2,1);
+  --e-spring:cubic-bezier(.34,1.46,.64,1); /* 살짝 튀는 느낌 */
+  --d-1:140ms;
+  --d-2:220ms;
+  --d-3:320ms;
+
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-t:env(safe-area-inset-top,0px);
+}
+
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#17171C;--fill:#23232B;--fill-2:#1E1E25;--fill-3:#2E2E38;--line:#23232B;
+    --g900:#F7F8F9;--g700:#C3C9D1;--g600:#98A0AB;--g500:#7F8894;--g400:#5C646F;
+    --blue:#5A9EFF;--blue-press:#4A8FF0;--blue-fill:#1B2637;
+    --green:#2FD69B;--green-fill:#132A22;
+    --amber:#FFB84D;--amber-fill:#2E2415;
+    --red:#FF6B78;--red-fill:#33191D;
+    --av1:#6FA8FF;--av2:#F0964E;--av3:#3ECF95;--av4:#A78BFF;--av5:#FF7794;--av6:#4CB8C4;
+    --on-blue:#101318;
+    --c-blue:#6FA8FF;   --c-blue-f:#1B2637;
+    --c-green:#3ECF95;  --c-green-f:#122A22;
+    --c-amber:#FFB84D;  --c-amber-f:#2E2415;
+    --c-red:#FF7794;    --c-red-f:#33191F;
+    --c-purple:#A78BFF; --c-purple-f:#221D3A;
+    --c-teal:#4CB8C4;   --c-teal-f:#12292C;
+    --c-pink:#F171C8;   --c-pink-f:#301B2B;
+    --c-gray:#98A0AB;   --c-gray-f:#23232B;
+    --card-shadow:none;
+    --sheet-shadow:0 -10px 40px rgba(0,0,0,.5);
+    --tap:rgba(255,255,255,.06);
+  }
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg);color:var(--g900);font-family:var(--f);
+  font-size:15px;line-height:1.45;font-variant-numeric:tabular-nums;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior:none;               /* standalone 고무줄 억제 */
+  -webkit-user-select:none;user-select:none;
+}
+input,textarea{-webkit-user-select:text;user-select:text}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+img{max-width:100%}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
+::selection{background:var(--blue-fill)}
+
+/* ---------- 앱 셸 ---------- */
+#app{position:fixed;inset:0;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.screens{position:relative;flex:1;min-height:0}
+.screen{position:absolute;inset:0;display:none;flex-direction:column}
+.screen.on{display:flex}
+.screen.enter{animation:screenIn var(--d-2) var(--e-out) both}
+@keyframes screenIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.scroll{
+  flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;padding-bottom:28px;
+}
+
+.hdr{flex:none;background:var(--bg);padding:calc(var(--safe-t) + 10px) 20px 10px;z-index:5;transition:box-shadow var(--d-1) var(--e-in-out)}
+.hdr-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:38px}
+.hdr h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.035em;line-height:1.2;transition:font-size var(--d-1) var(--e-out)}
+.hdr .acts{display:flex;align-items:center;gap:4px}
+.hdr .act{font-size:15px;font-weight:700;color:var(--blue);letter-spacing:-.02em;padding:8px 6px;border-radius:9px;transition:opacity var(--d-1)}
+.hdr .act:active{opacity:.55}
+.hdr .act.ghost{color:var(--g500)}
+.hdr.compact{box-shadow:0 1px 0 var(--line)}
+.hdr.compact h1{font-size:17px;letter-spacing:-.03em}
+
+/* ---------- 공통 블록 ---------- */
+.sec{padding:0 20px}
+.sec-lb{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:26px 0 10px;padding:0 2px}
+.sec-lb h2{margin:0;font-size:15px;font-weight:700;letter-spacing:-.03em}
+.sec-lb .n{font-size:13px;font-weight:600;color:var(--g500)}
+
+.card{background:var(--fill-2);border-radius:18px;padding:6px 4px;box-shadow:var(--card-shadow)}
+.row{display:flex;align-items:center;gap:13px;width:100%;text-align:left;padding:12px 14px;border-radius:14px;transition:background var(--d-1),transform var(--d-1) var(--e-out)}
+button.row:active{background:var(--tap);transform:scale(.985)}
+.row .grow{flex:1;min-width:0}
+.row .t{display:block;font-size:15.5px;font-weight:600;letter-spacing:-.028em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .d{display:block;font-size:12.5px;font-weight:500;color:var(--g500);margin-top:2px;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .d.x{color:var(--blue);font-weight:700}
+.row .n-sm{display:block;font-size:12.5px;font-weight:600;color:var(--g500);letter-spacing:-.02em;white-space:nowrap}
+.row .chev{flex:none;display:flex;color:var(--g400);margin-left:-4px}
+.row-ico{flex:none;width:38px;height:38px;border-radius:12px;background:var(--fill);display:flex;align-items:center;justify-content:center;color:var(--g600)}
+.thumb{flex:none;width:46px;height:46px;border-radius:14px;object-fit:cover;background:var(--fill-3);display:block}
+
+.row.big{padding:13px 14px}
+.row.big .t{font-size:17px;font-weight:700;letter-spacing:-.035em;line-height:1.32;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.row.big .d{font-size:12.5px;margin-top:4px}
+.row.big .thumb{width:56px;height:56px;border-radius:16px}
+.row.big .av{width:52px;height:52px;font-size:18px}
+.hi{color:var(--green);font-weight:700}
+
+.av{flex:none;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;letter-spacing:-.02em;overflow:hidden;background:var(--fill)}
+.av img{width:100%;height:100%;object-fit:cover;display:block;animation:fadeIn var(--d-2) var(--e-out) both}
+
+/* ---------- 스트립 ---------- */
+.strip{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--fill);border-radius:16px;padding:15px 16px;transition:transform var(--d-1) var(--e-out),opacity var(--d-1)}
+.strip:active{transform:scale(.98);opacity:.85}
+.strip .k{flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--g700);letter-spacing:-.03em}
+.strip .v{flex:none;font-size:15.5px;font-weight:800;letter-spacing:-.035em}
+.strip .chev{flex:none;display:flex;color:var(--g400);margin-right:-5px}
+.strip.blue{background:var(--blue-fill)}
+.strip.blue .k,.strip.blue .v,.strip.blue .chev{color:var(--blue)}
+
+/* ---------- 세그먼트 ---------- */
+.segwrap{position:sticky;top:0;z-index:4;background:var(--bg);padding:14px 20px 10px}
+/* 알약은 폭을 애니메이션하지 않는다 — 폭을 트랜지션하면 반경·그림자가 찌그러진다.
+   버튼이 모두 같은 폭(flex:1, gap 없음)이므로 자기 폭의 배수만큼 옮기면 정확히 맞는다.
+   JS 로 폭을 재지 않으니 웹폰트가 늦게 떠도 어긋나지 않는다. */
+/* 트랙 반경 16 − 패딩 4 = 알약 반경 12. 동심이어야 안쪽이 눌려 보이지 않는다.
+   알약 높이도 46px 로 키워 트랙을 꽉 채운다. */
+.seg{display:flex;background:var(--fill);border-radius:16px;padding:4px;position:relative}
+.seg button{flex:1 1 0;min-width:0;height:46px;border-radius:12px;font-size:14.5px;font-weight:700;letter-spacing:-.03em;color:var(--g600);position:relative;z-index:1;transition:color var(--d-2) var(--e-out);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg button.on{color:var(--g900)}
+/* 알약은 이동만, 늘어남은 자식이 맡는다 — transform 이 부딪히지 않게 */
+.seg .knob{
+  position:absolute;top:4px;bottom:4px;left:4px;
+  width:calc((100% - 8px) / var(--n,3));
+  transform:translateX(calc(var(--i,0) * 100%));
+  transition:transform 480ms cubic-bezier(.34,1.56,.64,1);
+  z-index:0;pointer-events:none;
+}
+.seg .knob i{
+  position:absolute;inset:0;display:block;border-radius:12px;
+  background:var(--bg);
+  box-shadow:0 2px 6px rgba(25,31,40,.10),0 0 0 .5px rgba(25,31,40,.04);
+}
+.seg .knob.pop i{animation:drop 520ms cubic-bezier(.32,.72,0,1) both}
+@media (prefers-color-scheme:dark){.seg .knob i{background:var(--fill-3);box-shadow:none}}
+
+/* ---------- 칩 ---------- */
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 20px 12px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;display:inline-flex;align-items:center;gap:4px;height:34px;padding:0 13px;border-radius:12px;background:var(--fill);font-size:13.5px;font-weight:700;letter-spacing:-.03em;color:var(--g700);white-space:nowrap;transition:background var(--d-2) var(--e-out),color var(--d-2) var(--e-out),transform var(--d-1) var(--e-out)}
+.chip:active{transform:scale(.95)}
+.chip.on{background:var(--g900);color:var(--bg)}
+.chip svg{opacity:.55}
+.chip.on svg{opacity:.95}
+
+/* ---------- 그리드 ---------- */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:0 4px}
+.cell{position:relative;aspect-ratio:1;background:var(--fill);overflow:hidden;border-radius:6px}
+.cell img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity var(--d-3) var(--e-out),transform var(--d-2) var(--e-out)}
+.cell img.ready{opacity:1}
+.cell:active img{opacity:.7}
+.cell .bdg{position:absolute;right:5px;bottom:5px;width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 0 1.5px rgba(255,255,255,.5);animation:pop var(--d-2) var(--e-spring) both}
+.cell .bdg.used{background:#00B26B}
+.cell .bdg.near{background:#E58A00;font-size:11px;font-weight:800;line-height:1;padding-bottom:1px}
+.cell .cnt{position:absolute;left:5px;top:5px;height:18px;padding:0 6px;border-radius:9px;background:rgba(15,18,22,.58);color:#fff;font-size:11px;font-weight:700;line-height:18px;backdrop-filter:blur(4px)}
+.cell .flag{position:absolute;left:5px;bottom:5px;height:18px;padding:0 6px;border-radius:9px;background:rgba(229,138,0,.92);color:#fff;font-size:10.5px;font-weight:800;line-height:18px}
+.cell .pick{position:absolute;inset:0;display:none;align-items:flex-start;justify-content:flex-end;padding:5px}
+.cell .pick i{width:21px;height:21px;border-radius:50%;border:1.8px solid rgba(255,255,255,.95);background:rgba(15,18,22,.24);display:flex;align-items:center;justify-content:center;color:#fff;transition:transform var(--d-1) var(--e-spring)}
+.selecting .cell .pick{display:flex}
+.cell.sel{background:var(--blue)}
+.cell.sel img{transform:scale(.88)}
+.cell.sel .pick i{background:var(--blue);border-color:#fff;transform:scale(1.1)}
+
+.gridfoot{padding:18px 20px 4px;display:flex;justify-content:center}
+.more{height:40px;padding:0 18px;border-radius:13px;background:var(--fill);font-size:13.5px;font-weight:700;letter-spacing:-.03em;color:var(--g700);transition:transform var(--d-1) var(--e-out)}
+.more:active{transform:scale(.96)}
+
+
+/* ---------- 하단 탭바: 리퀴드 글라스 ----------
+ * 유리는 뒤에 뭔가 지나가야 유리로 보인다. 그래서 흐름에서 빼내 띄우고,
+ * 스크롤 영역 아래쪽에 여백을 줘서 내용이 유리 밑으로 지나가게 한다.
+ *
+ * 네 겹으로 쌓는다
+ *   ❶ 본체   — 볼록한 돔. 위에서 들어온 빛이 위쪽을 밝히고 아래로 어두워진다
+ *   ❷ ::before — 테두리에서 14px 만 남긴 베젤 링. 여기서만 더 세게 굴절시킨다
+ *   ❸ 왜곡    — 링의 blur·saturate·brightness 를 본체보다 올려 빛이 꺾인 느낌
+ *   ❹ ::after  — 1.2px 테두리에만 얇게 도는 반짝임(스펙큘러)
+ */
+:root{--bezel-w:14px}
+
+#shell{position:relative}
+
+.tabbar{
+  position:absolute;left:10px;right:10px;bottom:calc(var(--safe-b) + 10px);
+  display:flex;padding:6px 5px;z-index:7;border-radius:999px;isolation:isolate;
+  /* ❶ 볼록: 위쪽 하이라이트 → 중앙 투명 → 아래쪽 미세한 음영 */
+  background:
+    radial-gradient(140% 180% at 50% -40%,
+      rgba(255,255,255,.60) 0%, rgba(255,255,255,.22) 30%,
+      rgba(255,255,255,.04) 55%, transparent 72%),
+    linear-gradient(180deg,
+      rgba(255,255,255,.20) 0%, rgba(255,255,255,.02) 38%,
+      rgba(0,0,0,.02) 78%, rgba(0,0,0,.05) 100%),
+    color-mix(in srgb, var(--bg) 66%, transparent);
+  -webkit-backdrop-filter:blur(20px) saturate(175%);
+  backdrop-filter:blur(20px) saturate(175%);
+  box-shadow:
+    0 0 0 .5px rgba(25,31,40,.09),
+    0 14px 36px -12px rgba(25,31,40,.28),
+    0 3px 10px -4px rgba(25,31,40,.14);
+}
+
+/* ❷❸ 베젤 링 — 테두리에서 14px 만 곡면. 링 안쪽(중앙)은 평평하게 둔다. */
+.tabbar::before,
+.tabbar::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
+  -webkit-mask:linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
+  mask-composite:exclude;
+}
+.tabbar::before{
+  padding:var(--bezel-w);
+  /* 본체보다 세게 — 여기서만 빛이 꺾인다 */
+  -webkit-backdrop-filter:blur(7px) saturate(260%) brightness(1.07) contrast(1.05);
+  backdrop-filter:blur(7px) saturate(260%) brightness(1.07) contrast(1.05);
+  /* 바깥쪽으로 갈수록 압축된 밝은 띠 → 렌즈 가장자리처럼 */
+  background:
+    radial-gradient(120% 150% at 50% -30%, rgba(255,255,255,.42), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.14), transparent 46%, rgba(0,0,0,.05));
+}
+
+/* ❹ 테두리에만 얇게 도는 반짝임 */
+.tabbar::after{
+  padding:1.2px;
+  background:linear-gradient(142deg,
+    rgba(255,255,255,.98) 0%, rgba(255,255,255,.42) 22%,
+    rgba(255,255,255,.06) 46%, rgba(255,255,255,0) 60%,
+    rgba(255,255,255,.20) 82%, rgba(255,255,255,.55) 100%);
+}
+
+@media (prefers-color-scheme:dark){
+  .tabbar{
+    background:
+      radial-gradient(140% 180% at 50% -40%,
+        rgba(255,255,255,.16) 0%, rgba(255,255,255,.06) 32%, transparent 68%),
+      linear-gradient(180deg, rgba(255,255,255,.06), transparent 40%, rgba(0,0,0,.16)),
+      color-mix(in srgb, var(--bg) 62%, transparent);
+    box-shadow:
+      0 0 0 .5px rgba(255,255,255,.09),
+      0 16px 40px -12px rgba(0,0,0,.72),
+      0 3px 10px -4px rgba(0,0,0,.5);
+  }
+  .tabbar::before{
+    -webkit-backdrop-filter:blur(7px) saturate(230%) brightness(1.16) contrast(1.04);
+    backdrop-filter:blur(7px) saturate(230%) brightness(1.16) contrast(1.04);
+    background:
+      radial-gradient(120% 150% at 50% -30%, rgba(255,255,255,.14), transparent 58%),
+      linear-gradient(180deg, rgba(255,255,255,.05), transparent 46%, rgba(0,0,0,.18));
+  }
+  .tabbar::after{
+    background:linear-gradient(142deg,
+      rgba(255,255,255,.55) 0%, rgba(255,255,255,.20) 24%,
+      rgba(255,255,255,.03) 48%, rgba(255,255,255,0) 62%,
+      rgba(255,255,255,.10) 84%, rgba(255,255,255,.28) 100%);
+  }
+}
+
+/* backdrop-filter 를 못 쓰는 환경에서는 불투명하게 — 글자가 안 보이면 안 된다 */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .tabbar{background:var(--bg);border-radius:999px;box-shadow:0 0 0 1px var(--line),0 8px 24px -10px rgba(25,31,40,.2)}
+  .tabbar::before{display:none}
+}
+
+/* 탭바 전체를 도는 빛 — 선택 위치에 따라 살짝 기울어진다 */
+.tablight{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;z-index:0}
+.tablight::before{
+  content:"";position:absolute;width:200%;height:200%;top:-50%;left:-50%;
+  background:radial-gradient(circle at 30% 30%, rgba(255,255,255,.20) 0%, transparent 50%);
+  transform:rotate(calc((var(--i,0) - 1.5) * 13deg));
+  transition:transform 520ms var(--e-out);
+}
+@media (prefers-color-scheme:dark){
+  .tablight::before{background:radial-gradient(circle at 30% 30%, rgba(255,255,255,.10) 0%, transparent 50%)}
+}
+
+/* 선택 알약 — 탭마다 두지 않고 하나를 옮긴다. 그래야 슬라이드가 된다.
+   자리 이동은 스프링(오버슈트)으로, 도착하며 살짝 부풀었다 가라앉는다. */
+.tabknob{
+  position:absolute;top:6px;bottom:6px;left:4px;
+  width:calc((100% - 8px) / var(--n,4));
+  transform:translateX(calc(var(--i,0) * 100%));
+  transition:transform 520ms cubic-bezier(.34,1.56,.64,1);
+  pointer-events:none;z-index:1;
+}
+.tabknob i{
+  position:absolute;inset:0;border-radius:999px;display:block;
+  /* 한 겹 더 겹친 유리 — 뒤를 살짝 눌러 어둡게 만든다 */
+  -webkit-backdrop-filter:blur(1.5px) saturate(135%) brightness(.93);
+  backdrop-filter:blur(1.5px) saturate(135%) brightness(.93);
+  background:linear-gradient(180deg, rgba(25,31,40,.045) 0%, rgba(25,31,40,.10) 100%);
+  box-shadow:
+    inset 0 1.6px 3.5px -1px rgba(25,31,40,.26),   /* 위에서 드리운 그림자 */
+    inset 0 0 0 .5px rgba(25,31,40,.08),           /* 겹친 유리의 테두리 */
+    inset 0 -.75px 0 rgba(255,255,255,.62);        /* 아래 립에 걸린 빛 */
+  transition:background 220ms var(--e-out),box-shadow 220ms var(--e-out);
+}
+/* 아래쪽에만 얇게 고인 빛 — 위가 아니라 아래다. 그림자가 위에서 오니까. */
+.tabknob i::before{
+  content:"";position:absolute;left:8%;right:8%;bottom:1.5px;height:38%;border-radius:999px;
+  background:linear-gradient(0deg, rgba(255,255,255,.55), transparent);
+  opacity:.75;transition:opacity 200ms;
+}
+/* 움직일 때만 켜지는 스펙큘러 */
+.tabknob i::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;opacity:0;transition:opacity 200ms;
+  background:
+    radial-gradient(ellipse at 28% 22%, rgba(255,255,255,.42) 0%, transparent 42%),
+    radial-gradient(ellipse at 72% 82%, rgba(255,255,255,.22) 0%, transparent 34%);
+}
+
+@media (prefers-color-scheme:dark){
+  .tabknob i{
+    -webkit-backdrop-filter:blur(1.5px) saturate(125%) brightness(.78);
+    backdrop-filter:blur(1.5px) saturate(125%) brightness(.78);
+    background:linear-gradient(180deg, rgba(0,0,0,.14) 0%, rgba(0,0,0,.24) 100%);
+    box-shadow:
+      inset 0 1.6px 3.5px -1px rgba(0,0,0,.55),
+      inset 0 0 0 .5px rgba(255,255,255,.10),
+      inset 0 -.75px 0 rgba(255,255,255,.20);
+  }
+  .tabknob i::before{background:linear-gradient(0deg, rgba(255,255,255,.18), transparent)}
+}
+
+/* 물방울 — 진행 방향으로 늘어나며 출발하고, 도착에서 눌렸다가 되튄다.
+   --sx 는 이동 거리에 비례하는 늘어남, --dir 은 진행 방향(±1). */
+.tabknob.pop i{animation:drop 560ms cubic-bezier(.32,.72,0,1) both}
+.tabknob.pop i::after{opacity:1}
+.tabknob.pop i::before{opacity:.4}
+@keyframes drop{
+  0%{transform:scale(1,1) skewX(0)}
+  20%{transform:scale(calc(1 + var(--sx,.22)), calc(1 - var(--sx,.22) * .78))
+      skewX(calc(var(--dir,1) * -5deg))}
+  46%{transform:scale(calc(1 + var(--sx,.22) * .35), calc(1 - var(--sx,.22) * .28))
+      skewX(calc(var(--dir,1) * -2deg))}
+  66%{transform:scale(calc(1 - var(--sx,.22) * .46), calc(1 + var(--sx,.22) * .5)) skewX(0)}
+  84%{transform:scale(calc(1 + var(--sx,.22) * .16), calc(1 - var(--sx,.22) * .14)) skewX(0)}
+  100%{transform:scale(1,1) skewX(0)}
+}
+
+/* 아이콘: 평소엔 윤곽선, 선택되면 속이 채워진다 */
+.tab .ico{position:relative;display:block;width:24px;height:24px}
+.tab .ico>span{position:absolute;inset:0;display:block;transition:opacity 220ms var(--e-out),transform 260ms var(--e-spring)}
+.tab .ico .fill{opacity:0;transform:scale(.86)}
+.tab.on .ico .out{opacity:0;transform:scale(1.1)}
+.tab.on .ico .fill{opacity:1;transform:scale(1)}
+
+@media (prefers-color-scheme:dark){
+  .tabknob i{
+    background:
+      radial-gradient(120% 160% at 50% -20%, rgba(255,255,255,.26), rgba(255,255,255,.08) 52%, transparent 76%),
+      rgba(255,255,255,.11);
+    box-shadow:
+      inset 0 .5px 0 rgba(255,255,255,.28),
+      inset 0 0 0 .5px rgba(255,255,255,.14),
+      0 2px 6px -1px rgba(0,0,0,.42);
+  }
+  .tabknob i::before{background:linear-gradient(180deg, rgba(255,255,255,.30), transparent)}
+}
+
+.tab{
+  flex:1 1 0;min-width:0;position:relative;z-index:2;
+  display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 4px;
+  color:color-mix(in srgb, var(--g900) 70%, transparent);border-radius:999px;
+  transition:color 260ms var(--e-out);
+}
+.tab .lb{max-width:100%;font-size:10.5px;font-weight:700;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tab.on{color:var(--g900)}
+.tab:active{opacity:.55}
+.tab .dot{position:absolute;transform:translate(11px,-2px);width:7px;height:7px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 2px var(--bg)}
+
+@media (prefers-reduced-motion:reduce){
+  .tabknob{transition:none}
+  .tabknob.pop i{animation:none}
+  .tablight::before{transition:none}
+  .tab .ico>span{transition:none}
+}
+
+/* ---------- SVG 굴절 유리 (크로미움) ----------
+ * 유리는 맑다. 굴절과 색수차가 효과를 만들고 blur 는 거의 쓰지 않는다.
+ * 그래서 CSS blur 와 베젤 링(::before)을 물리고, 틴트도 얇게 깐다.
+ * 사파리(아이폰)는 이 클래스가 붙지 않아 아래의 레이어드 유리를 그대로 쓴다. */
+.glass-svg .tabbar{
+  -webkit-backdrop-filter:var(--glass-filter);
+  backdrop-filter:var(--glass-filter);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.30) 0%, rgba(255,255,255,.06) 44%, rgba(255,255,255,.14) 100%),
+    color-mix(in srgb, var(--bg) 22%, transparent);
+  box-shadow:
+    inset 0 0 0 .5px rgba(255,255,255,.55),
+    0 0 0 .5px rgba(25,31,40,.10),
+    0 16px 40px -14px rgba(25,31,40,.30),
+    0 4px 12px -5px rgba(25,31,40,.16);
+}
+.glass-svg .tabbar::before{display:none}
+
+/* 맑은 유리 위에서 글자가 묻히지 않게 — iOS 도 이렇게 한다 */
+.glass-svg .tab{color:color-mix(in srgb, var(--g900) 76%, transparent);text-shadow:0 .5px 2px rgba(255,255,255,.8)}
+.glass-svg .tab svg{filter:drop-shadow(0 .5px 1.5px rgba(255,255,255,.85))}
+.glass-svg .tab.on{color:var(--g900);text-shadow:0 .5px 1.5px rgba(255,255,255,.55)}
+.glass-svg .tab.on svg{filter:drop-shadow(0 .5px 1px rgba(255,255,255,.6))}
+.tab.on{color:var(--g900)}
+
+@media (prefers-color-scheme:dark){
+  .glass-svg .tabbar{
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.12) 0%, rgba(255,255,255,.03) 46%, rgba(0,0,0,.10) 100%),
+      color-mix(in srgb, var(--bg) 20%, transparent);
+    box-shadow:
+      inset 0 0 0 .5px rgba(255,255,255,.16),
+      0 0 0 .5px rgba(255,255,255,.08),
+      0 18px 44px -14px rgba(0,0,0,.78),
+      0 4px 12px -5px rgba(0,0,0,.5);
+  }
+  .glass-svg .tab{text-shadow:0 .5px 2px rgba(0,0,0,.85)}
+  .glass-svg .tab.on{text-shadow:0 .5px 2px rgba(0,0,0,.7)}
+  .glass-svg .tab svg{filter:drop-shadow(0 .5px 1.5px rgba(0,0,0,.85))}
+}
+
+/* 유리 아래로 내용이 지나갈 여백 */
+.scroll{padding-bottom:calc(var(--safe-b) + 104px)}
+.pushed .scroll{padding-bottom:calc(var(--safe-b) + 32px)}
+#toast{bottom:calc(var(--safe-b) + 96px)}
+
+/* ---------- FursuitFriday ---------- */
+.friday{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:15px 16px;border-radius:20px;
+  background:linear-gradient(135deg, var(--blue-fill), color-mix(in srgb, var(--blue-fill) 55%, var(--bg)));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--blue) 18%, transparent);
+  transition:transform var(--d-1) var(--e-out)}
+.friday:active{transform:scale(.985)}
+.friday .ico{flex:none;width:42px;height:42px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  background:var(--blue);color:var(--on-blue);box-shadow:0 4px 12px -3px color-mix(in srgb, var(--blue) 55%, transparent)}
+.friday .col{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.friday .k{font-size:11.5px;font-weight:800;color:var(--blue);letter-spacing:-.01em}
+.friday .nm{font-size:16px;font-weight:800;color:var(--g900);letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.friday .m{font-size:12px;font-weight:600;color:var(--g600);letter-spacing:-.025em}
+.friday .chev{flex:none;display:flex;color:var(--blue);opacity:.7}
+
+/* ---------- 선택 바 ---------- */
+.selbar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;padding:10px 16px calc(var(--safe-b) + 16px);background:var(--bg);box-shadow:0 -1px 0 var(--line);z-index:8;transform:translateY(100%);transition:transform var(--d-3) var(--e-out)}
+.selbar.on{transform:none}
+.selbar button{flex:1;height:52px;border-radius:14px;font-size:16px;font-weight:700;letter-spacing:-.03em;background:var(--fill);color:var(--g700);transition:transform var(--d-1) var(--e-out),opacity var(--d-1)}
+.selbar button.pri{background:var(--blue);color:var(--on-blue)}
+.selbar button:active{transform:scale(.97)}
+.selbar button[disabled]{opacity:.4}
+
+/* ---------- 푸시 화면 ---------- */
+#stack{position:absolute;inset:0;pointer-events:none;z-index:9}
+.pushed{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;pointer-events:auto;transform:translateX(100%);transition:transform var(--d-3) var(--e-out)}
+.pushed.in{transform:none}
+.screens.behind{transform:scale(.94);opacity:.5;transition:transform var(--d-3) var(--e-out),opacity var(--d-3) var(--e-out);transform-origin:50% 50%}
+.screens{transition:transform var(--d-3) var(--e-out),opacity var(--d-3) var(--e-out)}
+
+.navbar{flex:none;display:flex;align-items:center;gap:4px;padding:calc(var(--safe-t) + 12px) 10px 12px;background:var(--bg);transition:box-shadow var(--d-1) var(--e-in-out)}
+.navbar.line{box-shadow:0 1px 0 var(--line)}
+.navbar .back{display:flex;align-items:center;color:var(--g900);padding:8px 8px 8px 4px;transition:transform var(--d-1) var(--e-out)}
+.navbar .back:active{transform:translateX(-2px) scale(.94)}
+.navbar .ttl{flex:1;min-width:0;font-size:17px;font-weight:700;letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.navbar .rt{color:var(--blue);font-size:15px;font-weight:700;padding:8px;min-width:34px;text-align:right}
+
+.gtitle{padding:6px 20px 0}
+.gtitle h2{margin:0;font-size:24px;font-weight:800;letter-spacing:-.042em;line-height:1.28;text-wrap:balance}
+.gtitle .m{margin-top:8px;font-size:13.5px;font-weight:600;color:var(--g500);letter-spacing:-.025em}
+.gtitle .x{margin-top:4px;font-size:13.5px;font-weight:700;color:var(--blue);letter-spacing:-.02em}
+
+.cta-bar{flex:none;padding:10px 16px calc(var(--safe-b) + 16px);background:var(--bg);box-shadow:0 -1px 0 var(--line);display:flex;gap:8px}
+
+/* ---------- 사진 상세 ---------- */
+.shot{padding:2px 16px 0}
+.shot img{width:100%;display:block;aspect-ratio:3/2;object-fit:cover;border-radius:18px;background:var(--fill);animation:fadeIn var(--d-3) var(--e-out) both}
+.pill{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;border-radius:9px;font-size:12.5px;font-weight:700;letter-spacing:-.025em}
+.pill.used{background:var(--green-fill);color:var(--green)}
+.pill.near{background:var(--amber-fill);color:var(--amber)}
+.pill.unused{background:var(--fill);color:var(--g600)}
+.pill.todo{background:var(--amber-fill);color:var(--amber)}
+.statebar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 20px 0}
+.statebar .fn{font-size:11.5px;font-weight:600;color:var(--g400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.tagwrap{display:flex;flex-wrap:wrap;gap:6px}
+.tg{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 12px;border-radius:11px;background:var(--fill);font-size:13.5px;font-weight:700;letter-spacing:-.03em;color:var(--g700);transition:transform var(--d-1) var(--e-out)}
+.tg:active{transform:scale(.94)}
+.tg.key{background:var(--blue-fill);color:var(--blue)}
+.tg.warn{background:var(--amber-fill);color:var(--amber)}
+.tg .k{font-size:10.5px;font-weight:700;opacity:.6}
+.tg.add{background:none;box-shadow:inset 0 0 0 1.5px var(--fill-3);color:var(--g500)}
+.tg .x{display:flex;color:var(--g400);margin:0 -3px 0 1px}
+.pchip{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 12px 0 4px;border-radius:18px;background:var(--fill);font-size:13.5px;font-weight:700;letter-spacing:-.03em;color:var(--g700);transition:transform var(--d-1) var(--e-out)}
+.pchip:active{transform:scale(.95)}
+.pchip .av{width:28px;height:28px;font-size:12px}
+
+.kv{background:var(--fill-2);border-radius:18px;padding:4px 0}
+.kv div{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:9px 16px}
+.kv dt{font-size:13.5px;font-weight:600;color:var(--g500);flex:none}
+.kv dd{margin:0;font-size:13.5px;font-weight:700;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.use{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:14px}
+.ch{flex:none;width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:800;color:#fff}
+.ch.instagram{background:#D62976}.ch.x{background:#191F28}.ch.blog{background:#03C75A}
+.ch.linkedin{background:#0A66C2}.ch.threads{background:#4B4B52}.ch.etc{background:#8B95A1}
+@media (prefers-color-scheme:dark){.ch.x{background:#4B4B52}}
+.use .u{display:block;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.use .w{display:block;font-size:12px;font-weight:600;color:var(--g500);margin-top:2px}
+
+/* ---------- 버튼 ---------- */
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:54px;border-radius:15px;font-size:16.5px;font-weight:700;letter-spacing:-.035em;background:var(--blue);color:var(--on-blue);transition:transform var(--d-1) var(--e-out),background var(--d-1)}
+.btn:active{transform:scale(.975);background:var(--blue-press)}
+.btn.sub{background:var(--fill);color:var(--g700);flex:0 0 auto;width:auto;padding:0 20px}
+.btn.sub:active{background:var(--fill-3)}
+.btn.danger{background:var(--red-fill);color:var(--red)}
+.btn[disabled]{opacity:.45;transform:none}
+.copy{flex:none;display:flex;align-items:center;gap:5px;height:34px;padding:0 12px;border-radius:11px;background:var(--fill);font-size:12.5px;font-weight:700;color:var(--g700);transition:transform var(--d-1) var(--e-out)}
+.copy:active{transform:scale(.94)}
+
+/* ---------- 시트 ---------- */
+#scrim{position:absolute;inset:0;background:rgba(15,18,22,.5);opacity:0;pointer-events:none;transition:opacity var(--d-2);z-index:10;backdrop-filter:blur(0)}
+#scrim.on{opacity:1;pointer-events:auto}
+#sheet{position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:24px 24px 0 0;padding:10px 20px calc(var(--safe-b) + 20px);z-index:11;transform:translateY(102%);transition:transform var(--d-3) var(--e-out);max-height:92%;overflow-y:auto;box-shadow:var(--sheet-shadow)}
+#sheet.on{transform:none}
+.grab{width:40px;height:4px;border-radius:2px;background:var(--fill-3);margin:0 auto 16px}
+#sheet h3{margin:0 0 4px;font-size:21px;font-weight:800;letter-spacing:-.04em;line-height:1.3}
+#sheet .lead{margin:0 0 20px;font-size:14px;font-weight:600;color:var(--g500);letter-spacing:-.028em;line-height:1.5}
+
+.fld{margin-bottom:16px}
+.fld label{display:block;font-size:13px;font-weight:700;color:var(--g600);margin-bottom:7px;letter-spacing:-.025em}
+.fld input,.fld select{width:100%;height:52px;padding:0 15px;border-radius:14px;border:0;background:var(--fill);font-size:15px;font-weight:600;letter-spacing:-.02em;transition:box-shadow var(--d-1),background var(--d-1)}
+.fld input::placeholder{color:var(--g400);font-weight:500}
+.fld input:focus,.fld select:focus{outline:none;box-shadow:inset 0 0 0 2px var(--blue);background:var(--bg)}
+.fld .hint{margin:7px 2px 0;font-size:12.5px;font-weight:600;color:var(--g500);letter-spacing:-.025em;line-height:1.5}
+.fld .hint.warn{color:var(--amber)}
+.detect{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;font-weight:600;color:var(--g500);min-height:30px}
+
+.opts{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.opt{display:flex;align-items:center;gap:10px;padding:14px;background:var(--fill-2);border-radius:14px;font-size:15px;font-weight:600;letter-spacing:-.028em;text-align:left;transition:background var(--d-1),transform var(--d-1) var(--e-out)}
+.opt:active{transform:scale(.985);background:var(--tap)}
+.opt.on{background:var(--blue-fill);color:var(--blue);font-weight:700}
+.opt .l{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opt .n{font-size:13px;font-weight:700;color:var(--g400)}
+.opt.on .n{color:var(--blue);opacity:.7}
+.opt .c{display:none;color:var(--blue)}
+.opt.on .c{display:flex;animation:pop var(--d-2) var(--e-spring) both}
+
+.addrow{display:flex;gap:8px}
+.addrow input{flex:1;min-width:0;height:48px;padding:0 14px;border-radius:13px;border:0;background:var(--fill);font-size:14.5px;font-weight:600;letter-spacing:-.025em}
+.addrow input:focus{outline:none;box-shadow:inset 0 0 0 2px var(--blue);background:var(--bg)}
+.addrow button{flex:none;height:48px;padding:0 18px;border-radius:13px;background:var(--g900);color:var(--bg);font-size:14.5px;font-weight:700;letter-spacing:-.03em;transition:transform var(--d-1) var(--e-out)}
+.addrow button:active{transform:scale(.96)}
+
+/* ---------- 토글: 리퀴드 글라스 ----------
+   트랙은 눌린 홈(오목) — 위에서 드리운 그림자가 안쪽에 있다.
+   비드는 반대로 볼록 — 위에 빛이 걸리고 아래로 그림자가 떨어진다.
+   비드의 위치 이동은 스프링, 눌렀을 때의 늘어남은 안쪽 ::before 가 맡아
+   transform 이 서로 부딪히지 않는다. */
+.sw{
+  flex:none;width:50px;height:30px;border-radius:999px;position:relative;isolation:isolate;
+  background:linear-gradient(180deg, rgba(25,31,40,.10), rgba(25,31,40,.05));
+  -webkit-backdrop-filter:blur(2px) saturate(120%) brightness(.97);
+  backdrop-filter:blur(2px) saturate(120%) brightness(.97);
+  box-shadow:
+    inset 0 1.5px 3px -1px rgba(25,31,40,.22),
+    inset 0 0 0 .5px rgba(25,31,40,.08),
+    inset 0 -.75px 0 rgba(255,255,255,.5);
+  transition:background 260ms var(--e-out),box-shadow 260ms var(--e-out);
+}
+.sw.on{
+  background:linear-gradient(180deg,
+    color-mix(in srgb, var(--blue) 92%, transparent),
+    color-mix(in srgb, var(--blue) 76%, transparent));
+  box-shadow:
+    inset 0 1.5px 3px -1px color-mix(in srgb, var(--blue) 55%, transparent),
+    inset 0 0 0 .5px color-mix(in srgb, var(--blue) 40%, transparent),
+    inset 0 -.75px 0 rgba(255,255,255,.35),
+    0 0 12px -4px color-mix(in srgb, var(--blue) 60%, transparent);
+}
+
+/* 비드 자리 — 이동만 담당 */
+.sw i{
+  position:absolute;top:3px;left:3px;width:24px;height:24px;
+  transform:translateX(0);
+  transition:transform 420ms cubic-bezier(.34,1.56,.64,1);
+}
+.sw.on i{transform:translateX(20px)}
+
+/* 비드 본체 — 볼록한 유리알. 눌리면 진행 방향으로 늘어난다. */
+.sw i::before{
+  content:"";position:absolute;inset:0;border-radius:50%;
+  background:
+    radial-gradient(120% 135% at 50% 18%, #fff 0%, rgba(255,255,255,.94) 52%, rgba(255,255,255,.86) 100%);
+  box-shadow:
+    0 1.5px 4px rgba(25,31,40,.30),
+    0 0 0 .5px rgba(25,31,40,.07),
+    inset 0 1px 0 rgba(255,255,255,1),
+    inset 0 -1.25px 1.5px rgba(25,31,40,.09);
+  transition:transform 240ms var(--e-spring);
+}
+/* 위쪽에 걸린 작은 반짝임 */
+.sw i::after{
+  content:"";position:absolute;left:22%;top:14%;width:34%;height:26%;border-radius:50%;
+  background:linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,0));
+  pointer-events:none;
+}
+.sw:active i::before{transform:scaleX(1.18) scaleY(.9)}
+
+/* 옮겨가는 동안 물방울처럼 늘어났다 줄어든다.
+   위치 이동(.sw i)과 늘어남(::before)을 나눠 두어 transform 이 부딪히지 않는다. */
+.sw.moving i::before{animation:beadDrop 460ms cubic-bezier(.34,1.56,.64,1) both}
+@keyframes beadDrop{
+  0%{transform:scale(1,1)}
+  22%{transform:scale(1.26,.82)}
+  50%{transform:scale(1.10,.93)}
+  70%{transform:scale(.90,1.10)}
+  86%{transform:scale(1.04,.97)}
+  100%{transform:scale(1,1)}
+}
+/* 트랙 색도 같은 리듬으로 */
+.sw{transition:background 300ms var(--e-out),box-shadow 300ms var(--e-out)}
+.sw.on{transition:background 260ms var(--e-out),box-shadow 260ms var(--e-out)}
+
+@media (prefers-color-scheme:dark){
+  .sw{
+    background:linear-gradient(180deg, rgba(0,0,0,.34), rgba(0,0,0,.20));
+    -webkit-backdrop-filter:blur(2px) saturate(115%) brightness(.85);
+    backdrop-filter:blur(2px) saturate(115%) brightness(.85);
+    box-shadow:
+      inset 0 1.5px 3px -1px rgba(0,0,0,.6),
+      inset 0 0 0 .5px rgba(255,255,255,.09),
+      inset 0 -.75px 0 rgba(255,255,255,.14);
+  }
+  .sw i::before{
+    background:radial-gradient(120% 135% at 50% 18%, #fff 0%, rgba(246,248,250,.92) 55%, rgba(226,231,237,.86) 100%);
+    box-shadow:
+      0 2px 5px rgba(0,0,0,.5),
+      0 0 0 .5px rgba(0,0,0,.28),
+      inset 0 1px 0 rgba(255,255,255,1),
+      inset 0 -1.25px 1.5px rgba(25,31,40,.14);
+  }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .sw i,.sw i::before{transition:none}
+  .sw.moving i::before{animation:none}
+  .seg .knob{transition:none}
+  .seg .knob.pop i{animation:none}
+}
+
+/* ---------- 제안 카드 ---------- */
+.sug{background:var(--fill-2);border-radius:18px;padding:16px;box-shadow:var(--card-shadow);animation:cardIn var(--d-3) var(--e-out) both}
+.sug+.sug{margin-top:10px}
+.sug.out{animation:cardOut var(--d-2) var(--e-in-out) both}
+.sug .why{font-size:12.5px;font-weight:700;color:var(--g500);letter-spacing:-.025em}
+.sug .q{margin:6px 0 0;font-size:17px;font-weight:700;letter-spacing:-.035em;line-height:1.35;text-wrap:balance}
+.sug .thumbs{display:flex;gap:5px;margin-top:12px}
+.sug .thumbs img{width:44px;height:44px;border-radius:10px;object-fit:cover;background:var(--fill-3)}
+.sug .acts{display:flex;gap:8px;margin-top:14px}
+.sug .acts button{flex:1;height:46px;border-radius:13px;font-size:14.5px;font-weight:700;letter-spacing:-.03em;background:var(--fill);color:var(--g700);transition:transform var(--d-1) var(--e-out)}
+.sug .acts button.yes{background:var(--blue);color:var(--on-blue)}
+.sug .acts button:active{transform:scale(.96)}
+.sug .always{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12.5px;font-weight:600;color:var(--g600);letter-spacing:-.025em}
+.sug .always .box{width:20px;height:20px;border-radius:6px;background:var(--fill-3);display:flex;align-items:center;justify-content:center;color:transparent;transition:background var(--d-1)}
+.sug .always.on .box{background:var(--blue);color:#fff}
+
+@keyframes cardIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes cardOut{to{opacity:0;transform:translateY(-6px) scale(.97);margin-top:-8px;max-height:0;padding-top:0;padding-bottom:0}}
+
+/* ---------- 사용하기 복사 단계 ---------- */
+.cpcard{background:var(--fill-2);border-radius:16px;padding:12px 14px 14px}
+.cpcard+.cpcard{margin-top:10px}
+.cphead{display:flex;align-items:center;gap:9px}
+.cphead .num{flex:none;width:22px;height:22px;border-radius:50%;background:var(--fill-3);color:var(--g600);font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:background var(--d-2) var(--e-out)}
+.cpcard.done .cphead .num{background:var(--blue);color:var(--on-blue)}
+.cpcard.done .cphead .num svg{animation:pop var(--d-2) var(--e-spring) both}
+.cphead .lb{flex:1;min-width:0;font-size:14.5px;font-weight:700;letter-spacing:-.03em}
+.cphead .sm{flex:none;font-size:12px;font-weight:600;color:var(--g500);letter-spacing:-.02em}
+.pv{margin:10px 0 0;padding:13px 14px;background:var(--bg);border-radius:12px;font-family:var(--f);font-size:13.5px;font-weight:600;line-height:1.7;letter-spacing:-.02em;white-space:pre-wrap;word-break:break-word}
+.pv:empty::before{content:"복사할 텍스트가 없어요";color:var(--g400);font-weight:500}
+.cpimg{margin-top:10px}
+.cpimg img{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:12px;display:block;background:var(--fill-3)}
+.optlink{display:flex;align-items:center;justify-content:center;gap:3px;width:100%;padding:15px 0 5px;font-size:13.5px;font-weight:700;color:var(--blue);letter-spacing:-.03em}
+.optlink:active{opacity:.6}
+.tagedit{display:flex;flex-wrap:wrap;gap:6px}
+
+/* ---------- 디데이 카드 ---------- */
+.ddwrap{border-radius:20px;overflow:hidden;background:var(--blue-fill)}
+.dday{display:flex;align-items:stretch;gap:0}
+.dday .main{flex:1;min-width:0;display:flex;flex-direction:row;align-items:center;gap:11px;padding:16px 4px 16px 16px;text-align:left}
+.dday .main:active{opacity:.7}
+.dday .main .col{display:flex;flex-direction:column;gap:4px;min-width:0}
+.dday .k{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--blue);letter-spacing:-.02em;opacity:.85}
+.dday .nm{font-size:17px;font-weight:800;color:var(--g900);letter-spacing:-.035em;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dday .m{font-size:12.5px;font-weight:600;color:var(--g600);letter-spacing:-.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dday .num{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 12px;min-width:76px}
+.dday .num b{font-size:24px;font-weight:800;color:var(--blue);letter-spacing:-.05em;line-height:1}
+.dday .num i{font-size:11px;font-weight:700;color:var(--blue);opacity:.7;font-style:normal;margin-top:4px}
+.dday .exp{flex:none;width:52px;display:flex;align-items:center;justify-content:center;color:var(--blue);background:rgba(49,130,246,.09);border-left:1px solid rgba(49,130,246,.14)}
+.dday .exp svg{transform:rotate(90deg);transition:transform var(--d-2) var(--e-out)}
+.dday.open .exp svg{transform:rotate(-90deg)}
+.dday .exp:active{background:rgba(49,130,246,.2)}
+
+.dday.soon{background:var(--amber-fill)}
+.ddwrap:has(.dday.soon){background:var(--amber-fill)}
+.dday.soon .k,.dday.soon .num b,.dday.soon .num i,.dday.soon .exp{color:var(--amber)}
+.dday.soon .exp{background:rgba(229,138,0,.1);border-left-color:rgba(229,138,0,.16)}
+
+/* 진행 중 — 초록으로 바꿔 "지금 열리고 있다"를 색으로 알린다 */
+.dday.live{background:var(--green-fill)}
+.ddwrap:has(.dday.live){background:var(--green-fill)}
+.dday.live .k,.dday.live .num b,.dday.live .num i,.dday.live .exp{color:var(--green)}
+.dday.live .num b{font-size:20px}
+.dday.live .exp{background:rgba(0,178,107,.1);border-left-color:rgba(0,178,107,.18)}
+
+.dday.maybe{background:var(--fill)}
+.ddwrap:has(.dday.maybe){background:var(--fill)}
+.dday.maybe .k,.dday.maybe .num b,.dday.maybe .num i,.dday.maybe .exp{color:var(--g600)}
+.dday.maybe .exp{background:rgba(25,31,40,.04);border-left-color:rgba(25,31,40,.08)}
+
+.live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;flex:none;animation:pulse 1.8s var(--e-in-out) infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
+
+.ddpanel{max-height:0;overflow:hidden;transition:max-height var(--d-3) var(--e-out)}
+.ddpanel-in{padding:4px 12px 12px;display:flex;flex-direction:column;gap:2px}
+
+.panel-lb{display:flex;align-items:center;justify-content:space-between;padding:8px 8px 6px;font-size:12px;font-weight:700;color:var(--g600);letter-spacing:-.02em;opacity:.85}
+.panel-btn{display:flex;align-items:center;gap:7px;width:100%;text-align:left;padding:11px 10px;border-radius:12px;background:rgba(255,255,255,.55);font-size:13.5px;font-weight:700;letter-spacing:-.03em;color:var(--g700);transition:transform var(--d-1) var(--e-out)}
+.panel-btn:active{transform:scale(.98)}
+.panel-btn .rt{margin-left:auto;font-size:12.5px;font-weight:700;color:var(--g500)}
+@media (prefers-color-scheme:dark){.panel-btn{background:rgba(255,255,255,.06)}}
+
+/* ---------- 일정 ----------
+   왼쪽은 정체성(로고 또는 대표사진), 오른쪽은 항상 디데이.
+   로고를 넣어도 디데이가 가려지지 않게 자리를 따로 준다. */
+.evwrap{background:var(--fill-2);border-radius:18px;box-shadow:var(--card-shadow);overflow:hidden}
+.evwrap+.evwrap{margin-top:9px}
+.ev{display:flex;align-items:stretch;transition:transform var(--d-1) var(--e-out)}
+.ev:active{transform:scale(.99)}
+.ev-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;text-align:left;padding:13px 14px}
+.ev .grow{flex:1;min-width:0}
+.ev .nm{display:flex;align-items:center;gap:6px;font-size:16px;font-weight:700;letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev .m{display:block;font-size:12.5px;font-weight:600;color:var(--g500);margin-top:3px;letter-spacing:-.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev .tt{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.ev .dd{flex:none;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;min-width:44px}
+.ev .dd b{font-size:15.5px;font-weight:800;letter-spacing:-.05em;color:var(--g500);line-height:1}
+.ev .dd i{font-size:10px;font-weight:700;font-style:normal;color:var(--g400);margin-top:3px}
+.ev.up .dd b{color:var(--blue)}
+.ev.up .dd i{color:var(--blue);opacity:.75}
+.ev.live .dd b,.ev.live .dd i,.ev.live .nm .live-dot{color:var(--green)}
+.ev.live .dd i{opacity:.8}
+.ev.maybe .nm{color:var(--g600)}
+.ev.maybe .evlogo{opacity:.62}
+.ev .exp{flex:none;width:44px;display:flex;align-items:center;justify-content:center;color:var(--g400);border-left:1px solid var(--line)}
+.ev .exp svg{transform:rotate(90deg);transition:transform var(--d-2) var(--e-out)}
+.ev.open .exp svg{transform:rotate(-90deg)}
+.ev .exp:active{background:var(--tap)}
+
+.evpanel{max-height:0;overflow:hidden;transition:max-height var(--d-3) var(--e-out)}
+.evpanel-in{padding:2px 12px 12px;display:flex;flex-direction:column;gap:1px}
+
+/* 행사 안의 약속 */
+.subrow{display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:10px 10px;border-radius:12px}
+.subrow.tapable:active{background:var(--tap)}
+.subrow .tm{flex:none;min-width:42px;font-size:12.5px;font-weight:800;color:var(--blue);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.subrow .grow{flex:1;min-width:0}
+.subrow .tt{display:block;font-size:14px;font-weight:600;letter-spacing:-.028em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.subrow .mm{display:block;font-size:11.5px;font-weight:600;color:var(--g500);margin-top:2px;letter-spacing:-.02em}
+.subrow .del{flex:none;display:flex;color:var(--g400);padding:4px}
+.daylb{padding:12px 10px 4px;font-size:11.5px;font-weight:800;color:var(--g500);letter-spacing:.02em}
+
+/* 행사 로고 — 이미지. 없으면 대표사진, 그것도 없으면 첫 글자 */
+.evlogo{flex:none;width:52px;height:52px;border-radius:15px;object-fit:cover;background:var(--fill);display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:800;color:var(--g400);letter-spacing:-.03em}
+.evlogo.sm{width:42px;height:42px;border-radius:13px;font-size:16px}
+.evlogo.big{width:72px;height:72px;border-radius:20px;font-size:12px;font-weight:700}
+.logorow{display:flex;align-items:center;gap:14px;margin-top:4px}
+.logorow .lg-t{display:flex;flex-direction:column;gap:4px;min-width:0}
+.logorow .lg-t b{font-size:16px;font-weight:700;letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logorow .lg-t em{font-size:13px;font-weight:600;font-style:normal;color:var(--g500);letter-spacing:-.025em}
+
+/* 다가오는 일정 헤더 옆 카테고리 고르기 */
+.catpick{display:inline-flex;align-items:center;gap:4px;height:28px;padding:0 10px;border-radius:10px;background:var(--fill);font-size:12.5px;font-weight:700;color:var(--g600);letter-spacing:-.03em;transition:transform var(--d-1) var(--e-out)}
+.catpick:active{transform:scale(.95)}
+.catpick.on{background:var(--fill-3)}
+.catpick .cat{pointer-events:none}
+
+/* ---------- 행사 카테고리 ---------- */
+.cat{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 12px;border-radius:11px;font-size:13.5px;font-weight:700;letter-spacing:-.03em;background:var(--c-gray-f);color:var(--c-gray);transition:transform var(--d-1) var(--e-out)}
+.cat:active{transform:scale(.94)}
+.cat .x{display:flex;opacity:.55;margin:0 -3px 0 1px}
+.cat.sm{height:22px;padding:0 8px;border-radius:7px;font-size:11px;gap:3px}
+.cat.c-blue{background:var(--c-blue-f);color:var(--c-blue)}
+.cat.c-green{background:var(--c-green-f);color:var(--c-green)}
+.cat.c-amber{background:var(--c-amber-f);color:var(--c-amber)}
+.cat.c-red{background:var(--c-red-f);color:var(--c-red)}
+.cat.c-purple{background:var(--c-purple-f);color:var(--c-purple)}
+.cat.c-teal{background:var(--c-teal-f);color:var(--c-teal)}
+.cat.c-pink{background:var(--c-pink-f);color:var(--c-pink)}
+.cat.c-gray{background:var(--c-gray-f);color:var(--c-gray)}
+
+.swatches{display:flex;gap:9px;flex-wrap:wrap}
+.sw-dot{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;transition:transform var(--d-1) var(--e-spring)}
+.sw-dot:active{transform:scale(.9)}
+.sw-dot svg{opacity:0;transition:opacity var(--d-1)}
+.sw-dot.on{transform:scale(1.06)}
+.sw-dot.on svg{opacity:1}
+.sw-dot.c-blue{background:var(--c-blue)}.sw-dot.c-green{background:var(--c-green)}
+.sw-dot.c-amber{background:var(--c-amber)}.sw-dot.c-red{background:var(--c-red)}
+.sw-dot.c-purple{background:var(--c-purple)}.sw-dot.c-teal{background:var(--c-teal)}
+.sw-dot.c-pink{background:var(--c-pink)}.sw-dot.c-gray{background:var(--c-gray)}
+
+/* ---------- 체크리스트 ---------- */
+.ck-row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:13px 14px;border-radius:14px;transition:background var(--d-1)}
+.ck-row:active{background:var(--tap)}
+.ck-box{flex:none;width:24px;height:24px;border-radius:8px;background:var(--fill-3);display:flex;align-items:center;justify-content:center;color:transparent;transition:background var(--d-2) var(--e-out),transform var(--d-2) var(--e-spring)}
+.ck-row.on .ck-box{background:var(--blue);color:#fff}
+.ck-row.on .ck-box svg{animation:pop var(--d-2) var(--e-spring) both}
+.ck-row .tx{flex:1;min-width:0;font-size:15px;font-weight:600;letter-spacing:-.028em;transition:color var(--d-2),opacity var(--d-2)}
+.ck-row.on .tx{color:var(--g500);text-decoration:line-through;text-decoration-color:var(--g400);opacity:.75}
+.ck-row .del{flex:none;display:flex;color:var(--g400);padding:4px}
+.ck-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:26px 0 10px;padding:0 2px}
+.ck-head h2{margin:0;font-size:15px;font-weight:700;letter-spacing:-.03em}
+.ck-head .pg{display:flex;align-items:center;gap:8px}
+.ck-head .pg .bar{width:56px;height:6px}
+.ck-head .pg span{font-size:12.5px;font-weight:700;color:var(--g500)}
+.ck-head .pg span.all{color:var(--green)}
+
+/* ---------- 노트 / 토스트 / 스켈레톤 ---------- */
+.note{display:flex;gap:9px;padding:15px 16px;border-radius:16px;background:var(--blue-fill);color:var(--blue);font-size:13px;font-weight:600;line-height:1.6;letter-spacing:-.025em}
+.note.warn{background:var(--amber-fill);color:var(--amber)}
+.note.bad{background:var(--red-fill);color:var(--red)}
+.note svg{flex:none;margin-top:1px}
+
+#toast{position:absolute;left:16px;right:16px;bottom:calc(var(--safe-b) + 88px);background:var(--g900);color:var(--bg);font-size:14px;font-weight:700;letter-spacing:-.03em;padding:15px 18px;border-radius:15px;opacity:0;pointer-events:none;transform:translateY(10px) scale(.98);transition:opacity var(--d-2) var(--e-out),transform var(--d-2) var(--e-out);z-index:14;text-align:center}
+#toast.on{opacity:1;transform:none}
+
+.sk{background:linear-gradient(100deg,var(--fill) 30%,var(--fill-3) 50%,var(--fill) 70%);background-size:220% 100%;animation:sheen 1.3s linear infinite;border-radius:8px}
+@keyframes sheen{from{background-position:130% 0}to{background-position:-30% 0}}
+
+.bar{height:8px;border-radius:5px;background:var(--fill-3);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--blue);border-radius:5px;transition:width var(--d-3) var(--e-out)}
+
+/* ---------- 진입 애니메이션 유틸 ---------- */
+.stagger>*{animation:fadeUp var(--d-3) var(--e-out) both}
+.stagger>*:nth-child(1){animation-delay:0ms}
+.stagger>*:nth-child(2){animation-delay:26ms}
+.stagger>*:nth-child(3){animation-delay:52ms}
+.stagger>*:nth-child(4){animation-delay:78ms}
+.stagger>*:nth-child(5){animation-delay:104ms}
+.stagger>*:nth-child(6){animation-delay:130ms}
+.stagger>*:nth-child(7){animation-delay:156ms}
+.stagger>*:nth-child(n+8){animation-delay:180ms}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}
+
+/* ---------- 로그인 ---------- */
+.gate{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:0;padding:32px 28px calc(var(--safe-b) + 32px);text-align:center}
+.gate .mark{width:76px;height:76px;border-radius:24px;background:var(--blue-fill);color:var(--blue);display:flex;align-items:center;justify-content:center;margin-bottom:22px;animation:pop 460ms var(--e-spring) both}
+.gate h1{margin:0;font-size:27px;font-weight:800;letter-spacing:-.045em;animation:fadeUp var(--d-3) var(--e-out) 80ms both}
+.gate p{margin:10px 0 0;font-size:14.5px;font-weight:600;color:var(--g500);letter-spacing:-.028em;line-height:1.6;animation:fadeUp var(--d-3) var(--e-out) 140ms both}
+.gate .btn{margin-top:32px;animation:fadeUp var(--d-3) var(--e-out) 200ms both}
+.gate .fine{margin-top:16px;font-size:12.5px;font-weight:600;color:var(--g400);line-height:1.6;animation:fadeUp var(--d-3) var(--e-out) 260ms both}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:1ms!important;animation-delay:0ms!important;transition-duration:1ms!important}
+}
+
+/* 사용하기 시트: 개별 복사 버튼 한 줄 */
+.splitrow{display:flex;gap:8px;margin-top:8px}
+.splitrow button{flex:1;height:44px;border-radius:13px;background:var(--fill);font-size:14px;font-weight:700;letter-spacing:-.03em;color:var(--g700);transition:transform var(--d-1) var(--e-out)}
+.splitrow button:active{transform:scale(.97)}
+
+/* ---------- 테마 색 ----------
+   액센트는 --blue 계열 토큰 하나로 모여 있으므로, 그것만 갈아끼운다.
+   라이트/다크를 CSS 로 각각 정의해 시스템 테마가 바뀌어도 알아서 따라간다. */
+:root[data-accent="blue"]{--blue:#3182F6;--blue-press:#2272EB;--blue-fill:#EBF3FE;--on-blue:#FFFFFF}
+:root[data-accent="teal"]{--blue:#0E9AA7;--blue-press:#0B8792;--blue-fill:#E3F4F6;--on-blue:#FFFFFF}
+:root[data-accent="green"]{--blue:#00A661;--blue-press:#009155;--blue-fill:#E2F6EC;--on-blue:#FFFFFF}
+:root[data-accent="purple"]{--blue:#7B5CE5;--blue-press:#6B4CD6;--blue-fill:#F0EBFE;--on-blue:#FFFFFF}
+:root[data-accent="pink"]{--blue:#D6409F;--blue-press:#C22F8D;--blue-fill:#FCEAF6;--on-blue:#FFFFFF}
+:root[data-accent="red"]{--blue:#E5476A;--blue-press:#D3365A;--blue-fill:#FDEBEF;--on-blue:#FFFFFF}
+:root[data-accent="amber"]{--blue:#E58A00;--blue-press:#CC7A00;--blue-fill:#FDF1DE;--on-blue:#FFFFFF}
+:root[data-accent="ink"]{--blue:#2B3441;--blue-press:#1E2530;--blue-fill:#EDEFF2;--on-blue:#FFFFFF}
+@media (prefers-color-scheme:dark){:root[data-accent="blue"]{--blue:#6FA8FF;--blue-press:#5A97F0;--blue-fill:#1B2637;--on-blue:#101318}}
+@media (prefers-color-scheme:dark){:root[data-accent="teal"]{--blue:#4CC3CF;--blue-press:#3FB2BE;--blue-fill:#12292C;--on-blue:#0B1416}}
+@media (prefers-color-scheme:dark){:root[data-accent="green"]{--blue:#3ECF95;--blue-press:#33BC85;--blue-fill:#122A22;--on-blue:#0A1712}}
+@media (prefers-color-scheme:dark){:root[data-accent="purple"]{--blue:#A78BFF;--blue-press:#977AF5;--blue-fill:#221D3A;--on-blue:#12101C}}
+@media (prefers-color-scheme:dark){:root[data-accent="pink"]{--blue:#F171C8;--blue-press:#E060B8;--blue-fill:#301B2B;--on-blue:#1A0E16}}
+@media (prefers-color-scheme:dark){:root[data-accent="red"]{--blue:#FF7794;--blue-press:#F06783;--blue-fill:#33191F;--on-blue:#1B0D11}}
+@media (prefers-color-scheme:dark){:root[data-accent="amber"]{--blue:#FFB84D;--blue-press:#F0A93D;--blue-fill:#2E2415;--on-blue:#1A1409}}
+@media (prefers-color-scheme:dark){:root[data-accent="ink"]{--blue:#B9C2CE;--blue-press:#A6B0BD;--blue-fill:#252A32;--on-blue:#12151A}}
+
+/* ---------- 테마 색 고르기 ---------- */
+.acc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.acc{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 4px;border-radius:16px;background:var(--fill-2);transition:transform var(--d-1) var(--e-out),background var(--d-1)}
+.acc:active{transform:scale(.94)}
+.acc.on{background:var(--fill)}
+.acc .dot{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;transition:transform var(--d-2) var(--e-spring)}
+.acc .dot svg{opacity:0;transition:opacity var(--d-1)}
+.acc.on .dot{transform:scale(1.06)}
+.acc.on .dot svg{opacity:1}
+.acc .nm{font-size:12px;font-weight:700;color:var(--g600);letter-spacing:-.03em}
+.acc.on .nm{color:var(--g900)}
+.acc.a-blue .dot{background:#3182F6}
+.acc.a-teal .dot{background:#0E9AA7}
+.acc.a-green .dot{background:#00A661}
+.acc.a-purple .dot{background:#7B5CE5}
+.acc.a-pink .dot{background:#D6409F}
+.acc.a-red .dot{background:#E5476A}
+.acc.a-amber .dot{background:#E58A00}
+.acc.a-ink .dot{background:#2B3441}
+@media (prefers-color-scheme:dark){
+  .acc.a-blue .dot{background:#6FA8FF}.acc.a-teal .dot{background:#4CC3CF}
+  .acc.a-green .dot{background:#3ECF95}.acc.a-purple .dot{background:#A78BFF}
+  .acc.a-pink .dot{background:#F171C8}.acc.a-red .dot{background:#FF7794}
+  .acc.a-amber .dot{background:#FFB84D}.acc.a-ink .dot{background:#B9C2CE}
+}
+
+/* 약속 메모 */
+.subrow .memo{display:block;font-size:12px;font-weight:600;color:var(--g600);margin-top:5px;letter-spacing:-.02em;line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.subrow .hasmemo{flex:none;display:flex;color:var(--blue);opacity:.55;align-self:flex-start;margin-top:2px}
+.fld textarea{width:100%;padding:13px 15px;border-radius:14px;border:0;background:var(--fill);
+  font:inherit;font-size:15px;font-weight:600;letter-spacing:-.02em;line-height:1.55;resize:none;font-family:var(--f)}
+.fld textarea::placeholder{color:var(--g400);font-weight:500}
+.fld textarea:focus{outline:none;box-shadow:inset 0 0 0 2px var(--blue);background:var(--bg)}

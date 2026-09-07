@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>컷대장</title>
+<meta name="description" content="행사 사진의 행사·작가를 정리하고 SNS 사용 이력을 기록합니다.">
+
+<!-- iOS 웹앱 -->
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17171C" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="컷대장">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" href="./icons/icon-192.png">
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+
+<div id="app">
+  <!-- 로그인 게이트 -->
+  <div class="gate" id="gate" hidden></div>
+
+  <!-- 앱 셸 -->
+  <div id="shell" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="screens">
+      <section class="screen on" data-screen="home">
+        <div class="hdr"><div class="hdr-row"><h1>모아보기</h1></div></div>
+        <div class="scroll" id="home-scroll"></div>
+      </section>
+
+      <section class="screen" data-screen="photos">
+        <div class="hdr">
+          <div class="hdr-row"><h1 id="ph-title">사진</h1><span class="acts"><button class="act ghost" id="flt-reset" hidden>필터 초기화</button><button class="act" id="sel-toggle">선택</button></span></div>
+        </div>
+        <div class="chips" id="ph-chips"></div>
+        <div class="scroll" id="ph-scroll"></div>
+      </section>
+
+      <section class="screen" data-screen="schedule">
+        <div class="hdr"><div class="hdr-row"><h1>일정</h1></div></div>
+        <div class="scroll" id="sched-body"></div>
+      </section>
+
+      <section class="screen" data-screen="settings">
+        <div class="hdr"><div class="hdr-row"><h1>설정</h1></div></div>
+        <div class="scroll" id="set-body"></div>
+      </section>
+    </div>
+
+    <div id="stack"></div>
+
+    <nav class="tabbar" id="tabbar"></nav>
+
+    <div class="selbar" id="selbar">
+      <button id="sb-event">행사</button>
+      <button id="sb-shooter">작가</button>
+      <button id="sb-more" class="pri">더보기</button>
+    </div>
+  </div>
+
+  <div id="scrim"></div>
+  <div id="sheet" role="dialog" aria-modal="true"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>
