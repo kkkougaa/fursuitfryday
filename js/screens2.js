@@ -646,16 +646,23 @@ function meSheet() {
     + `<button class="btn" id="me-save">저장</button>`
     + (me.x ? `<button class="btn sub" id="me-open" style="width:100%;margin-top:8px">${ic('ext', 17, 2)}X 에서 열기</button>` : ''));
 
-  let avatar = me.avatar || null;
-  wireXField($('#me-x'), $('#me-det'), d => { if (d) avatar = d; });
+  const xf = wireXField($('#me-x'), $('#me-det'));
   $('#me-open')?.addEventListener('click', () => openX(me.x));
-  $('#me-save').onclick = () => {
+  $('#me-save').onclick = async () => {
     const nick = $('#me-nick').value.trim();
     const h = normX($('#me-x').value);
     if (!nick && !h) { $('#me-nick').focus(); return; }
+    const btn = $('#me-save');
+    btn.disabled = true;
+    let avatar = null;
+    if (h) {
+      btn.textContent = '프로필 사진 확인 중…';
+      avatar = await xf.settle();
+      if (!avatar && h === me.x) avatar = me.avatar || null;
+    }
     me.nick = nick;
     me.x = h;
-    me.avatar = h ? avatar : null;
+    me.avatar = avatar;
     touch();
     closeSheet();
     toast('프로필을 저장했어요');
@@ -719,24 +726,31 @@ export function entitySheet(kind, ent, after) {
     + (ent.x ? `<button class="btn sub" id="es-open" style="width:100%;margin-top:8px">${ic('ext', 17, 2)}X 에서 @${esc(ent.x)} 열기</button>` : '')
     + (ent.avatar ? `<button class="btn sub" id="es-refresh" style="width:100%;margin-top:8px">${ic('refresh', 17, 2)}아바타 새로 받기</button>` : ''));
 
-  let avatar = ent.avatar || null;
-  wireXField($('#es-x'), $('#es-det'), d => { if (d) avatar = d; });
+  const xf = wireXField($('#es-x'), $('#es-det'));
   $('#es-open')?.addEventListener('click', () => openX(ent.x));
   $('#es-refresh')?.addEventListener('click', async () => {
-    const h = normX($('#es-x').value);
-    if (!h) { toast('X 아이디를 먼저 넣어주세요'); return; }
-    const r = await av.fetchAvatar(h);
-    if (r.ok) { avatar = r.dataUrl; $('#es-det').innerHTML = `<span class="av" style="width:30px;height:30px"><img alt="" src="${r.dataUrl}"></span><span style="color:var(--green);font-weight:700">새로 받았어요</span>`; }
-    else toast(av.REASON[r.reason]);
+    if (!normX($('#es-x').value)) { toast('X 아이디를 먼저 넣어주세요'); return; }
+    const d = await xf.refresh();
+    if (!d) toast('프로필 사진을 다시 받지 못했어요');
   });
-  $('#es-save').onclick = () => {
+  $('#es-save').onclick = async () => {
     const nm = $('#es-name').value.trim();
     if (!nm) { $('#es-name').focus(); return; }
+    const btn = $('#es-save');
+    btn.disabled = true;
+    const h = normX($('#es-x').value);
+    /* 사진이 도는 중이면 기다린다 — 이걸 안 기다려서 아바타가 사라지고 있었다. */
+    let avatar = null;
+    if (h) {
+      btn.textContent = '프로필 사진 확인 중…';
+      avatar = await xf.settle();
+      // 핬들이 그대로고 새로 받기가 실패했다면 있던 사진을 지우지 않는다
+      if (!avatar && h === ent.x) avatar = ent.avatar || null;
+    }
     ent.name = nm;
     if (!isSh) ent.role = ($('#es-role').value.trim() || null);
-    const h = normX($('#es-x').value);
     ent.x = h;
-    ent.avatar = h ? avatar : null;
+    ent.avatar = avatar;
     touch();
     closeSheet();
     toast('저장했어요');

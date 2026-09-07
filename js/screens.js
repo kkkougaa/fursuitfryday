@@ -672,12 +672,16 @@ function newEntitySheet(kind, done) {
     + `<button class="btn" id="nx-save">만들기</button>`);
 
   const name = $('#nx-name');
-  let avatar = null;
-  if (kind !== 'event') wireXField($('#nx-x'), $('#nx-det'), d => { avatar = d; });
+  const xf = kind !== 'event' ? wireXField($('#nx-x'), $('#nx-det')) : null;
 
   $('#nx-save').onclick = async () => {
     const v = name.value.trim();
     if (!v) { name.focus(); return; }
+    const btn = $('#nx-save');
+    btn.disabled = true;
+    // 사진을 받는 동안 누를 것이 없으니 버튼에 상황을 적는다
+    let avatar = null;
+    if (xf) { btn.textContent = '프로필 사진 확인 중…'; avatar = await xf.settle(); }
     let ent;
     if (kind === 'event') ent = addEvent(v, $('#nx-date').value);
     else if (kind === 'shooter') ent = addShooter(v, $('#nx-x').value);
@@ -689,27 +693,72 @@ function newEntitySheet(kind, done) {
   setTimeout(() => name.focus(), 340);
 }
 
-/** X 아이디 입력란: 붙여넣기를 관대하게 받고, 멈추면 아바타를 미리 받아 보여준다. */
+/** X 아이디 입력란: 붙여넣기를 관대하게 받고, 아바타를 받아 미리 바윈다.
+ *
+ * 저장 버튼이 이 결과를 **기다려야 한다.** 예전에는 클로저 변수 하나에
+ * 담아만 놨는대, 입력하고 바로 저장을 누르면 (폰에서는 그게 기본 동작이다)
+ *   · 새 시트면 아직 null 이라 아바타 없이 저장되고
+ *   · 앞서 다른 핬들을 받아놨으면 **엉뚱한 사람 사진**이 저장됐다.
+ * 그래서 핬들과 사진을 한 쌍으로 묶고, settle() 로 확정한다.
+ *
+ * @returns {{settle:()=>Promise<string|null>, refresh:()=>Promise<string|null>}}
+ */
 function wireXField(input, det, onAvatar) {
-  let timer, last = '';
+  let timer = 0;
+  let got = null;       // { h, dataUrl, reason } — 핬들에 묶인 확정 결과
+  let inflight = null;  // { h, p }              — 진행 중인 요국
+
+  const show = html => { if (det.isConnected) det.innerHTML = html; };
+  const SEEK = `<span class="sk" style="width:26px;height:26px;border-radius:50%"></span><span>프로필 사진을 찾는 중…</span>`;
+  const FOUND = d => `<span class="av" style="width:30px;height:30px"><img alt="" src="${d}"></span><span style="color:var(--green);font-weight:700">프로필 사진을 찾았어요</span>`;
+
+  /* 같은 핬들을 다시 받지 않는다 — unavatar 한도를 아넌다.
+     실패(404)도 기억해서 키입새마다 두드리지 않게 한다. */
+  function grab(h) {
+    if (got && got.h === h) return Promise.resolve(got.dataUrl);
+    if (inflight && inflight.h === h) return inflight.p;
+    const p = av.fetchAvatar(h).then(r => {
+      got = r.ok ? { h, dataUrl: r.dataUrl } : { h, dataUrl: null, reason: r.reason };
+      return got.dataUrl;
+    });
+    inflight = { h, p };
+    return p;
+  }
+
   const run = async () => {
+    clearTimeout(timer);
     const h = normX(input.value);
-    if (!h) { det.innerHTML = input.value.trim() ? `<span style="color:var(--amber)">X 아이디 형식이 아니에요 (영문·숫자·밑줄 15자)</span>` : ''; onAvatar(null); return; }
-    if (h === last) return;
-    last = h;
-    det.innerHTML = `<span class="sk" style="width:26px;height:26px;border-radius:50%"></span><span>프로필 사진을 찾는 중…</span>`;
-    const r = await av.fetchAvatar(h);
-    if (normX(input.value) !== h) return;
-    if (r.ok) {
-      det.innerHTML = `<span class="av" style="width:30px;height:30px"><img alt="" src="${r.dataUrl}"></span><span style="color:var(--green);font-weight:700">프로필 사진을 찾았어요</span>`;
-      onAvatar(r.dataUrl);
-    } else {
-      det.innerHTML = `${ic('info', 15)}<span>${av.REASON[r.reason]}. 아이디는 저장돼요.</span>`;
-      onAvatar(null);
+    if (!h) {
+      show(input.value.trim() ? `<span style="color:var(--amber)">X 아이디 형식이 아니에요 (영밸·숫자·밑줄 15자)</span>` : '');
+      onAvatar?.(null);
+      return null;
     }
+    if (!(got && got.h === h)) show(SEEK);
+    const d = await grab(h);
+    if (normX(input.value) !== h) return d;   // 그 사이 바뉌면 그리지 않는다
+    show(d ? FOUND(d) : `${ic('info', 15)}<span>${av.REASON[got.reason] || av.REASON.error}. 아이디는 저장돼요.</span>`);
+    onAvatar?.(d);
+    return d;
   };
-  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 600); });
+
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 500); });
   input.addEventListener('blur', run);
+
+  return {
+    /* 저장 바로 전에 부른다. 지금 입력값에 맞는 사진을 확실하게 확보한다 —
+       디바운스가 아직 안 돌았으면 지금 받고, 도는 중이면 그것을 기다린다. */
+    async settle() {
+      clearTimeout(timer);
+      const h = normX(input.value);
+      if (!h) return null;
+      return grab(h);
+    },
+    /* 같은 핬들이도 강제로 다시 받는다 (아바타 새로 받기). */
+    async refresh() {
+      got = null; inflight = null;
+      return run();
+    },
+  };
 }
 
 /* ---------- 태그 적용 ---------- */
