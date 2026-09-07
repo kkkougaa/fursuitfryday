@@ -26,16 +26,20 @@ import { pool } from './auth.js';
 import { thumbBlob } from './drive.js';
 import * as store from './thumbcache.js';
 
-const GRID = 400;
+/* 그리드 타일은 3열이라 아이폰에서 한 변이 126px 남짓이다. 3배 화면을
+   기준으로 해도 380px 이면 충분한데 400 은 여유가 과했다. 288 로 낮추면
+   장당 용량이 40~60KB 에서 15~25KB 로 떨어진다 — 2천 장이면 100MB 가
+   40MB 가 되는 차이고, 받는 시간도 그만큼 줄어든다. */
+const GRID = 288;
 
 /* 화면에 한 번에 보이는 건 20장 남짓, 그리드가 렌더하는 건 90장이다.
    그보다 넉넉히 두되 무한하지는 않게. 400px 썸네일 장당 40~60KB 기준
    240장이면 15MB 안쪽이다. */
-const MEM_MAX = 240;
+const MEM_MAX = 120;
 
 const mem = new Map();    // key → blob URL (Map 의 삽입 순서를 LRU 로 쓴다)
 const meta = new Map();   // fileId → drive file
-const run = pool(4);      // 동시 요청. 8 은 아이폰에서 디코딩이 겹쳐 버거웠다
+const run = pool(2);      // 동시 요청. 한 번에 두 장이면 스크롤이 충분히 따라온다
 const inflight = new Map();
 
 let provider = null;      // 데모 모드용 — 드라이브 대신 로컬 생성
@@ -94,16 +98,21 @@ const io = new IntersectionObserver(entries => {
     io.unobserve(e.target);
     fill(e.target);
   }
-}, { rootMargin: '500px 0px' });
+}, { rootMargin: '200px 0px' });
 
 /**
  * <img data-fid> 를 채운다.
  * 화면에 보이는 앞쪽 몇 장은 관찰을 기다리지 않고 바로 받는다 —
  * 첫 화면이 비어 보이는 것을 막는 데 이게 제일 크다.
  */
+/* 안 보이는 화면(display:none)의 타일은 받지 않는다. 탭을 옮기면 그때
+   그 화면이 다시 그려지면서 받는다. */
+const onScreen = img => !!img.offsetParent;
+
 export function observe(img, eager = false) {
   const id = img.dataset.fid;
   if (!id) return;
+  if (!onScreen(img)) return;
   const k = key(id, GRID);
   const hit = memGet(k);
   if (hit) { apply(img, hit, k); return; }
@@ -113,7 +122,7 @@ export function observe(img, eager = false) {
 
 /** 목록을 렌더한 직후 호출 — IDB 를 한 번에 읽어 보이는 부분을 즉시 채운다. */
 export async function warm(imgs, eagerCount = 14) {
-  const list = [...imgs];
+  const list = [...imgs].filter(onScreen);
   const ids = list.map(i => i.dataset.fid).filter(Boolean);
   if (!ids.length) return;
 
@@ -132,6 +141,8 @@ export async function warm(imgs, eagerCount = 14) {
       apply(img, url, k);
     }
   }
+  /* 나머지는 관찰에 맡긴다. rootMargin 이 200px 이라 실제로 화면 근처에
+     올 때만 받는다 — 목록이 몇백 장이어도 동시에 도는 건 두 장뿐이다. */
   list.forEach((img, i) => { if (!img.classList.contains('ready')) observe(img, i < eagerCount); });
 }
 
@@ -178,16 +189,17 @@ function gridUrl(id) {
   return p;
 }
 
-/** 드라이브에서 blob 자체를 받는다. 캐시에 넣지 않는다. */
-async function rawBlob(id, size) {
+/**
+ * 드라이브에서 blob 자체를 받는다. 캐시에 넣지 않는다.
+ *
+ * allowOriginal 은 큰 미리보기에서만 켠다. 썸네일이 없는 파일을 그리드에서
+ * 만나면 그냥 빈 타일로 두는 편이 낫다 — 원본은 장당 수 MB 라, 그런 파일이
+ * 몇십 장만 섞여 있어도 미리 받기가 통째로 무너진다.
+ */
+async function rawBlob(id, size, allowOriginal = false) {
   const f = meta.get(id);
   if (!f) return null;
-  return run(async () => {
-    const url = await thumbBlob(f, size);
-    const blob = await (await fetch(url)).blob();
-    URL.revokeObjectURL(url);   // drive.thumbBlob 이 만든 임시 URL
-    return blob;
-  });
+  return run(() => thumbBlob(f, size, { allowOriginal }));
 }
 
 function apply(img, url, k) {
@@ -213,7 +225,8 @@ export async function big(id, size = 1200) {
     url = await provider(id, size);
     if (!url) return null;
   } else {
-    const blob = await rawBlob(id, size);
+    // 상세 화면은 한 장뿐이니 썸네일이 없으면 원본을 받아도 된다
+    const blob = await rawBlob(id, size, true);
     if (!blob) return null;
     url = URL.createObjectURL(blob);
   }
@@ -236,7 +249,7 @@ export async function blobOf(id, size = 1600) {
     const url = await provider(id, size);
     return url ? (await fetch(url)).blob() : null;
   }
-  return rawBlob(id, size);
+  return rawBlob(id, size, true);
 }
 
 /* ---------- 미리 받기 ---------- */
@@ -250,10 +263,15 @@ export async function blobOf(id, size = 1600) {
  * 대신 작게 묶어(STEP) 처리하고 사이마다 한 박자 쉰다. 쉬는 동안 브라우저가
  * 화면을 갱신하고 정리할 틈이 생겨, 진행 표시가 멈추지 않고 탭도 안 죽는다.
  */
-const STEP = 4;
+const STEP = 3;
+
+let swept = false;
 
 export async function prefetch(ids, { onProgress, shouldStop } = {}) {
   if (provider) return { done: 0, skipped: ids.length, failed: 0 };
+
+  // 크기를 바꿨다면 예전 크기 썸네일이 남아 있다. 세션당 한 번 치운다.
+  if (!swept) { swept = true; await store.dropOtherSizes(`@${GRID}`); }
 
   // 이미 있는 것은 건너뛴다. 두 번째 실행이 즉시 끝나는 이유다.
   const keys = ids.map(id => key(id, GRID));
@@ -266,6 +284,14 @@ export async function prefetch(ids, { onProgress, shouldStop } = {}) {
   onProgress?.({ done, total, failed });
 
   for (let i = 0; i < todo.length; i += STEP) {
+    if (shouldStop?.()) break;
+
+    /* 앱이 백그라운드로 가면 멈춘다. 사파리는 안 보이는 탭의 메모리를 제일
+       먼저 회수하는데, 그때 계속 받고 있으면 회수 대상 1순위가 된다.
+       돌아오면 이어서 진행한다. */
+    while (document.hidden && !shouldStop?.()) {
+      await new Promise(r => setTimeout(r, 500));
+    }
     if (shouldStop?.()) break;
     const batch = todo.slice(i, i + STEP);
     await Promise.all(batch.map(async id => {
@@ -280,8 +306,9 @@ export async function prefetch(ids, { onProgress, shouldStop } = {}) {
       }
     }));
     onProgress?.({ done, total, failed });
-    // 브라우저에게 숨 돌릴 틈을 준다
-    await new Promise(r => setTimeout(r, 40));
+    /* 브라우저에게 숨 돌릴 틈을 준다. 100장마다 한 번은 길게 쉰다 —
+       사파리가 메모리를 정리할 시간을 주는 것이 목적이다. */
+    await new Promise(r => setTimeout(r, done % 100 < STEP ? 400 : 60));
   }
 
   return { done, total, failed, skipped: ids.length - total };

@@ -153,7 +153,7 @@ async function paintPhoto(sc, id) {
     const per = personById(pid);
     if (!per) return;
     const c = el('button', 'pchip', avatarHTML(per.name, per.avatar) + esc(per.name));
-    c.onclick = () => { V.filter = { ...NO_FILTER(), person: pid }; V.limit = 90; goTab('photos'); popAll(); };
+    c.onclick = () => { V.filter = { ...NO_FILTER(), person: pid }; V.limit = 60; goTab('photos'); popAll(); };
     pw.appendChild(c);
   });
   const addP = el('button', 'tg add', `${ic('plus', 14, 2.4)}퍼슈트`);
@@ -408,7 +408,7 @@ function paintTags(b) {
           else if (kind === 'shooter') V.filter.shooter = it.v;
           else if (kind === 'person') V.filter.person = it.v;
           else V.filter.tag = it.v;
-          V.limit = 90;
+          V.limit = 60;
           goTab('photos');
           popAll();
         };

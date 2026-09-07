@@ -68,28 +68,32 @@ export async function getFile(id, fields = 'id,name,mimeType') {
   return res.json();
 }
 
-/** 썸네일을 blob URL 로. thumbnailLink 는 수명이 짧으니 저장하지 말고 그때그때 쓴다. */
-export async function thumbBlob(file, size = 400) {
-  const media = `${FILES}/${file.id}?alt=media`;
-
-  /*
-   * thumbnailLink 는 lh3.googleusercontent.com 을 가리킨다. 여기에
-   * Authorization 헤더를 붙이면 프리플라이트가 붙고, 그 응답에
-   * Access-Control-Allow-Origin 이 없어 브라우저가 막는 경우가 있다.
-   * 실패하면 원본을 직접 받는 쪽으로 조용히 물러난다. 느리지만 확실하다.
-   */
+/**
+ * 썸네일을 **blob 그대로** 준다.
+ *
+ * 예전에는 여기서 blob URL 을 만들어 돌려줬고, 부르는 쪽은 그 URL 을 다시
+ * fetch 해서 blob 을 얻었다. 한 장을 받을 때마다 같은 이미지가 메모리에 두 벌
+ * 생겼다는 뜻이다. 미리 받기처럼 수천 장을 연달아 돌리면 이것만으로 터진다.
+ *
+ * thumbnailLink 는 lh3.googleusercontent.com 을 가리킨다. Authorization
+ * 헤더를 붙이면 프리플라이트가 생기고 CORS 로 막히는 경우가 있어 헤더 없이
+ * 부른다 — 링크 자체가 서명돼 있어 토큰이 필요 없다.
+ *
+ * @param {boolean} allowOriginal 썸네일이 없을 때 원본을 받을지.
+ *   원본은 장당 수 MB 라 그리드·미리 받기에서는 절대 켜면 안 된다.
+ *   기본값이 false 인 이유다.
+ */
+export async function thumbBlob(file, size = 400, { allowOriginal = false } = {}) {
   if (file.thumbnailLink) {
     const link = file.thumbnailLink.replace(/=s\d+(-c)?$/, `=s${size}`);
     try {
-      // 썸네일 링크는 그 자체로 서명돼 있어 토큰이 필요 없다. 헤더를 빼면
-      // 단순 요청이 되어 프리플라이트도 CORS 거절도 피한다.
       const res = await fetch(link);
-      if (res.ok) return URL.createObjectURL(await res.blob());
+      if (res.ok) return res.blob();
     } catch { /* CORS·네트워크 — 아래로 */ }
   }
-
-  const res = await api(media);
-  return URL.createObjectURL(await res.blob());
+  if (!allowOriginal) return null;
+  const res = await api(`${FILES}/${file.id}?alt=media`);
+  return res.blob();
 }
 
 /* ---------------- catalog.json ---------------- */

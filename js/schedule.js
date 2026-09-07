@@ -346,7 +346,7 @@ function paintSchedule(sc) {
       const box = el('div', 'stagger');
       upF.forEach(e => box.appendChild(eventBlock(e, true)));
       s.appendChild(box);
-      th.warm(box.querySelectorAll('img[data-fid]'), 12);
+      th.warm(box.querySelectorAll('img[data-fid]'), 6);
     }
     sc.appendChild(s);
   }
@@ -360,7 +360,7 @@ function paintSchedule(sc) {
     l.forEach(e => box.appendChild(eventBlock(e, false)));
     s.appendChild(box);
     sc.appendChild(s);
-    th.warm(box.querySelectorAll('img[data-fid]'), 8);
+    th.warm(box.querySelectorAll('img[data-fid]'), 4);
   };
   section('날짜 미정', undated);
   section('지난 일정', past);

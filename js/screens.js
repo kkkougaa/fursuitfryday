@@ -27,7 +27,7 @@ export const V = {
   tab: 'home',
   axis: 'event',
   filter: { unfiled: false, unused: false, planned: false, event: null, shooter: null, person: null, tag: null },
-  limit: 90,
+  limit: 60,
   selecting: false,
   sel: new Set(),
   onSync: null,   // app.js 가 주입
@@ -89,6 +89,25 @@ export function renderTabs() {
   }
 }
 
+/* 지금 안 보이는 탭 중 다시 그려야 할 것들.
+ *
+ * 화면은 display:none 이라 안 보이는 탭의 타일은 스크롤 로딩이 걸리지 않는다.
+ * 그런데 warm() 의 "앞쪽 몇 장" 은 보이든 말든 즉시 받는다. renderAll() 이
+ * 네 화면을 다 그렸으니, 앱을 열자마자 네 화면 몫의 썸네일이 한꺼번에
+ * 쏟아졌다 — 정작 눈에 보이는 건 한 화면인데.
+ *
+ * 그래서 보이는 탭만 그리고 나머지는 표시만 해둔다. 그 탭으로 넘어가는
+ * 순간 그린다. 사용자가 보는 것은 똑같고, 한 번에 받는 양은 1/4 이 된다. */
+const stale = new Set();
+
+function paintTab(k) {
+  stale.delete(k);
+  if (k === 'home') renderHome();
+  else if (k === 'photos') renderPhotos();
+  else if (k === 'schedule') renderSchedule();
+  else if (k === 'settings') renderSettings();
+}
+
 export function goTab(k) {
   V.tab = k;
   document.querySelectorAll('.screen').forEach(s => {
@@ -97,18 +116,13 @@ export function goTab(k) {
     if (on) { s.classList.remove('enter'); void s.offsetWidth; s.classList.add('enter'); }
   });
   renderTabs();
-  if (k === 'home') renderHome();
-  if (k === 'photos') renderPhotos();
-  if (k === 'schedule') renderSchedule();
-  if (k === 'settings') renderSettings();
+  paintTab(k);
 }
 
 export function renderAll() {
   renderTabs();
-  renderHome();
-  renderPhotos();
-  renderSchedule();
-  renderSettings();
+  ['home', 'photos', 'schedule', 'settings'].forEach(k => { if (k !== V.tab) stale.add(k); });
+  paintTab(V.tab);
 }
 
 /* ============================ 모아보기 ============================ */
@@ -191,14 +205,18 @@ function paintHome(sc) {
   if (!all.length) { sc.appendChild(emptyState()); return; }
 
   /* --- 확인할 것 --- */
-  const list = sug.build();
+  const all6 = sug.build();
+  /* 제안은 최대 6개까지 만들어지고 카드마다 썸네일이 붙는다. 홈을 열자마자
+     그게 전부 로딩되니 첫 화면이 제일 무거웠다. 한 번에 처리할 수 있는 건
+     어차피 하나뿐이라 세 장만 놓고, 하나 처리하면 다음 것이 올라온다. */
+  const list = all6.slice(0, 3);
   if (list.length) {
     const s = el('div', 'sec');
-    const lb = el('div', 'sec-lb', `<h2>확인할 것</h2><span class="n">${list.length}</span>`);
+    const lb = el('div', 'sec-lb', `<h2>확인할 것</h2><span class="n">${all6.length}</span>`);
     lb.style.marginTop = '4px';
     s.appendChild(lb);
     const box = el('div', '');
-    list.forEach(g => box.appendChild(sugCard(g)));
+    list.forEach((g, i) => box.appendChild(sugCard(g, i === 0)));
     s.appendChild(box);
     sc.appendChild(s);
   }
@@ -211,7 +229,7 @@ function paintHome(sc) {
 
   if (unfiled) {
     const b = el('button', 'strip blue', `<span class="k">행사·사진사를 정할 사진</span><span class="v">${fmt(unfiled)}장</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
-    b.onclick = () => { V.filter = { ...NO_FILTER(), unfiled: true }; V.limit = 90; goTab('photos'); };
+    b.onclick = () => { V.filter = { ...NO_FILTER(), unfiled: true }; V.limit = 60; goTab('photos'); };
     strips.appendChild(b);
   }
 
@@ -227,7 +245,7 @@ function paintHome(sc) {
   b2.style.marginTop = unfiled ? '8px' : '0';
   b2.onclick = () => {
     if (!planned) { toast('사진을 골라 업로드 예정으로 담아보세요'); return; }
-    V.filter = { ...NO_FILTER(), planned: true }; V.limit = 90; goTab('photos');
+    V.filter = { ...NO_FILTER(), planned: true }; V.limit = 60; goTab('photos');
   };
   strips.appendChild(b2);
 
@@ -280,7 +298,7 @@ function paintGroups(wrap) {
     box.appendChild(b);
   });
   wrap.appendChild(box);
-  th.warm(box.querySelectorAll('img[data-fid]'), 8);
+  th.warm(box.querySelectorAll('img[data-fid]'), 4);
 }
 
 function emptyState() {
@@ -295,9 +313,10 @@ function emptyState() {
   return s;
 }
 
-function sugCard(g) {
+function sugCard(g, eager = false) {
   const c = el('div', 'sug');
-  const thumbs = g.ids.slice(0, 5).map(id => `<img data-fid="${id}" alt="">`).join('');
+  // 다섯 장은 무엇에 대한 제안인지 알기에 과했다. 세 장이면 충분하다.
+  const thumbs = g.ids.slice(0, 3).map(id => `<img data-fid="${id}" alt="" decoding="async">`).join('');
   c.innerHTML = `<div class="why">${esc(g.why)}</div><p class="q">${esc(g.q)}</p>`
     + (g.note ? `<div class="why" style="margin-top:6px;color:var(--amber)">${esc(g.note)}</div>` : '')
     + `<div class="thumbs">${thumbs}</div>`;
@@ -326,7 +345,8 @@ function sugCard(g) {
   };
   acts.appendChild(yes); acts.appendChild(no);
   c.appendChild(acts);
-  requestAnimationFrame(() => th.warm(c.querySelectorAll('img[data-fid]'), 5));
+  // 맨 위 카드만 바로 받는다. 나머지는 화면에 들어올 때 받는다.
+  requestAnimationFrame(() => th.warm(c.querySelectorAll('img[data-fid]'), eager ? 3 : 0));
   return c;
 }
 
@@ -418,7 +438,7 @@ function openGroup(axis, g) {
     const strip = el('button', 'strip blue', `<span class="k">아직 안 올린 사진</span><span class="v">${fmt(g.list.length - u)}장</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
     strip.onclick = () => {
       applyAxis(axis, g.key);
-      V.filter.unused = true; V.limit = 90;
+      V.filter.unused = true; V.limit = 60;
       goTab('photos'); popAll();
     };
     s1.appendChild(strip);
@@ -437,7 +457,7 @@ function openGroup(axis, g) {
         r.innerHTML = avatarHTML(s.name, s.avatar)
           + `<span class="grow"><span class="t">${esc(s.name)}</span><span class="d${s.x ? ' x' : ''}">${s.x ? '@' + esc(s.x) : 'X 아이디 없음'}</span></span>`
           + `<span class="n-sm">${fmt(n)}장</span><span class="chev">${ic('chev', 18, 2.1)}</span>`;
-        r.onclick = () => { applyAxis('event', g.key); V.filter.shooter = s.id; V.limit = 90; goTab('photos'); popAll(); };
+        r.onclick = () => { applyAxis('event', g.key); V.filter.shooter = s.id; V.limit = 60; goTab('photos'); popAll(); };
         box.appendChild(r);
       });
       if (none) {
@@ -484,7 +504,7 @@ function openGroup(axis, g) {
     const grid = el('div', 'grid');
     sorted.slice(0, 60).forEach(p => grid.appendChild(cell(p)));
     sc.appendChild(grid);
-    th.warm(grid.querySelectorAll('img[data-fid]'), 12);
+    th.warm(grid.querySelectorAll('img[data-fid]'), 6);
   });
 }
 
@@ -530,7 +550,7 @@ function paintPhotos(sc) {
   const grid = el('div', 'grid');
   list.slice(0, V.limit).forEach(p => grid.appendChild(cell(p)));
   sc.appendChild(grid);
-  th.warm(grid.querySelectorAll('img[data-fid]'), 14);
+  th.warm(grid.querySelectorAll('img[data-fid]'), 6);
 
   if (list.length > V.limit) {
     const f = el('div', 'gridfoot');
@@ -575,7 +595,7 @@ function cell(p) {
       ? `<span class="bdg used">${ic('check', 13, 3)}</span>`
       : '';
   const flag = isUnfiled(p) ? '<span class="flag">미분류</span>' : '';
-  c.innerHTML = `<img data-fid="${p.id}" alt="${esc(p.name || '')}">${badge}${flag}`
+  c.innerHTML = `<img data-fid="${p.id}" alt="${esc(p.name || '')}" decoding="async">${badge}${flag}`
     + `<span class="pick"><i>${ic('check', 12, 3)}</i></span>`;
   if (V.sel.has(p.id)) c.classList.add('sel');
   c.onclick = () => {
@@ -593,7 +613,7 @@ export function wirePhotoChrome() {
     const b = e.target.closest('[data-c]');
     if (!b) return;
     const c = b.dataset.c, f = V.filter;
-    V.limit = 90;
+    V.limit = 60;
     if (c === 'unfiled') { f.unfiled = !f.unfiled; renderPhotos(); }
     else if (c === 'unused') { f.unused = !f.unused; renderPhotos(); }
     else if (c === 'planned') { f.planned = !f.planned; renderPhotos(); }
@@ -605,7 +625,7 @@ export function wirePhotoChrome() {
 
   $('#flt-reset').onclick = () => {
     V.filter = NO_FILTER();
-    V.limit = 90;
+    V.limit = 60;
     renderPhotos();
     $('#ph-scroll').scrollTop = 0;
     toast('필터를 모두 해제했어요');

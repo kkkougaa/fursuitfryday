@@ -47,10 +47,24 @@ export async function get(key) {
   } catch { return null; }
 }
 
+/*
+ * 트랜잭션이 끝날 때까지 기다린다.
+ *
+ * 예전에는 put 을 던져만 놓고 바로 돌아왔다. 미리 받기처럼 빠르게 연달아
+ * 부르면 아직 디스크에 안 내려간 blob 들이 대기열에 그대로 쌓인다 — 수백
+ * 장이 메모리에 떠 있는 셈이라, 정작 저장은 잘 되는데 탭이 죽었다.
+ * 여기서 기다리면 받는 속도가 저장 속도를 앞지르지 못한다.
+ */
 export async function put(key, blob) {
   try {
-    const st = await tx('readwrite');
-    st.put({ k: key, b: blob, at: Date.now() });
+    const db = await open();
+    await new Promise((ok, no) => {
+      const t = db.transaction(STORE, 'readwrite');
+      t.objectStore(STORE).put({ k: key, b: blob, at: Date.now() });
+      t.oncomplete = ok;
+      t.onerror = () => no(t.error);
+      t.onabort = () => no(t.error);
+    });
   } catch { /* 용량 초과·프라이빗 모드 — 캐시 없이도 동작한다 */ }
 }
 
@@ -118,6 +132,31 @@ export async function prune(max = MAX) {
         c.continue();
       };
       cur.onerror = () => ok(0);
+    });
+  } catch { return 0; }
+}
+
+/**
+ * 지금 쓰는 크기가 아닌 썸네일을 버린다.
+ *
+ * 캐시 키에 크기가 들어 있어서(`fileId@288`), 크기를 바꾸면 예전 것들이
+ * 읽히지도 지워지지도 않은 채 저장 공간만 차지한다. 400px 로 2천 장을
+ * 받아뒀다면 100MB 가 그대로 남는 셈이라, 새 크기를 받을 자리를 오히려
+ * 뺏는다. 크기를 바꾼 뒤 한 번만 돌면 된다.
+ */
+export async function dropOtherSizes(keepSuffix) {
+  try {
+    const st = await tx('readwrite');
+    let dropped = 0;
+    return await new Promise(ok => {
+      const cur = st.openKeyCursor();
+      cur.onsuccess = () => {
+        const c = cur.result;
+        if (!c) return ok(dropped);
+        if (!String(c.key).endsWith(keepSuffix)) { st.delete(c.key); dropped++; }
+        c.continue();
+      };
+      cur.onerror = () => ok(dropped);
     });
   } catch { return 0; }
 }
