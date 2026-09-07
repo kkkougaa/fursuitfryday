@@ -483,7 +483,7 @@ function openGroup(axis, g) {
     const grid = el('div', 'grid');
     sorted.slice(0, 60).forEach(p => grid.appendChild(cell(p)));
     sc.appendChild(grid);
-    th.warm(grid.querySelectorAll('img[data-fid]'), 24);
+    th.warm(grid.querySelectorAll('img[data-fid]'), 12);
   });
 }
 
@@ -529,12 +529,12 @@ function paintPhotos(sc) {
   const grid = el('div', 'grid');
   list.slice(0, V.limit).forEach(p => grid.appendChild(cell(p)));
   sc.appendChild(grid);
-  th.warm(grid.querySelectorAll('img[data-fid]'), 30);
+  th.warm(grid.querySelectorAll('img[data-fid]'), 14);
 
   if (list.length > V.limit) {
     const f = el('div', 'gridfoot');
-    const b = el('button', 'more', `+${fmt(Math.min(90, list.length - V.limit))}개 더 보기`);
-    b.onclick = () => { V.limit += 90; renderPhotos(); };
+    const b = el('button', 'more', `+${fmt(Math.min(60, list.length - V.limit))}개 더 보기`);
+    b.onclick = () => { V.limit += 60; renderPhotos(); };
     f.appendChild(b);
     sc.appendChild(f);
   }

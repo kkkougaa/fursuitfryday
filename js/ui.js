@@ -116,10 +116,19 @@ export function push(title, build, ctaBuild) {
   return v;
 }
 
+/* 화면이 닫힐 때 정리할 것을 등록한다. 사진 상세의 큰 미리보기처럼
+   메모리를 많이 쓰는 것은 닫는 즉시 놓아줘야 한다. */
+const onPop = [];
+export function addPopHook(fn) { onPop.push(fn); }
+
 export function pop(v) {
   v.classList.remove('in');
   if (stack().querySelectorAll('.pushed.in').length === 0) $('.screens').classList.remove('behind');
-  setTimeout(() => v.remove(), 320);
+  setTimeout(() => {
+    v.remove();
+    // 남은 푸시 화면이 없으면 큰 이미지를 들고 있을 이유가 없다
+    if (!stack().querySelector('.pushed')) onPop.forEach(f => { try { f(); } catch { /* 무시 */ } });
+  }, 320);
 }
 export const popAll = () => stack().querySelectorAll('.pushed').forEach(pop);
 

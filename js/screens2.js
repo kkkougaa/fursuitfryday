@@ -10,7 +10,7 @@ import * as th from './thumbs.js';
 import * as av from './avatar.js';
 import {
   $, el, ic, esc, fmt, avatarHTML, push, popAll, openSheet, closeSheet,
-  toast, confirmSheet, wireScroll, segment, keepScroll, openX, flipSwitch,
+  toast, confirmSheet, wireScroll, segment, keepScroll, openX, flipSwitch, addPopHook,
 } from './ui.js';
 import { squareDataURL, pickImage } from './imgutil.js';
 import {
@@ -20,6 +20,10 @@ import { openPacking } from './schedule.js';
 import { isFriday } from './friday.js';
 
 /* ============================ 사진 상세 ============================ */
+
+/* 사진 화면을 다 닫으면 1200px 미리보기를 놓아준다. 사진을 스무 장쯤
+   넘겨보는 동안 그것만 쌓여도 사파리가 탭을 죽인다. */
+addPopHook(() => th.releaseBig());
 
 export function openPhoto(id) {
   push('사진', sc => paintPhoto(sc, id), (bar, sc) => {
@@ -302,7 +306,14 @@ export async function useSheet(id, after) {
   let blob = null;
   th.blobOf(id, 1600).then(async b => {
     blob = b;
-    if (b) { img.classList.remove('sk'); img.src = URL.createObjectURL(b); }
+    if (!b) return;
+    /* 미리보기용 URL 은 이미지가 그려지는 순간 놓아준다. 디코딩이 끝나면
+       화면에 남는 것은 브라우저가 관리하는 비트맵이고, URL 을 붙잡고 있을
+       이유가 없다. 복사에 쓸 blob 자체는 위 변수에 그대로 있다. */
+    const u = URL.createObjectURL(b);
+    img.addEventListener('load', () => URL.revokeObjectURL(u), { once: true });
+    img.classList.remove('sk');
+    img.src = u;
   });
 
   $('#c-copy').onclick = async () => {
