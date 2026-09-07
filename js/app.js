@@ -8,7 +8,17 @@ import * as th from './thumbs.js';
 import { $, el, ic, fmt, toast, openSheet, closeSheet, confirmSheet } from './ui.js';
 import { V, renderAll, goTab, renderTabs, renderHome, renderPhotos, renderSettings, wirePhotoChrome, wireHomeSync } from './screens.js';
 
-const DEMO = new URLSearchParams(location.search).has('demo');
+const Q = new URLSearchParams(location.search);
+const DEMO = Q.has('demo');
+
+/* 진단 스위치. 크래시 원인을 하나씩 떼어 보려고 둔다.
+ *   ?nothumb=1  썸네일을 한 장도 받지 않는다
+ *   ?noglass=1  탭바의 굴절 유리 효과를 끈다 (iOS 에서 비싼 효과다)
+ *   ?safe=1     위 둘을 한꺼번에
+ * 평소에는 아무것도 안 붙이면 된다. */
+const SAFE = Q.has('safe');
+const NOTHUMB = SAFE || Q.has('nothumb');
+const NOGLASS = SAFE || Q.has('noglass');
 
 const gate = $('#gate');
 const shell = $('#shell');
@@ -264,8 +274,10 @@ async function prefetchThumbs() {
 async function wireShell() {
   wirePhotoChrome();
   wireHomeSync();
+  if (NOTHUMB) { th.disable(); toast('진단 모드 · 썸네일을 받지 않습니다'); }
   // 굴절 유리는 지원하는 브라우저에만. 사파리는 레이어드 CSS 유리로 남는다.
   try {
+    if (NOGLASS) throw new Error('noglass');
     const { attachGlass, supportsSvgBackdrop } = await import('./glass.js');
     if (supportsSvgBackdrop()) attachGlass($('#tabbar'), {
         // radius 를 크게 주면 glass.js 가 높이의 절반으로 잘라 캡슐이 된다
