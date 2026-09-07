@@ -23,7 +23,7 @@
  *     장당 수 MB 라 이게 제일 빨리 메모리를 먹었다.
  */
 import { pool } from './auth.js';
-import { thumbBlob } from './drive.js';
+import { thumbBlob, getFile } from './drive.js';
 import * as store from './thumbcache.js';
 
 /* 그리드 타일은 3열이라 아이폰에서 한 변이 126px 남짓이다. 3배 화면을
@@ -54,6 +54,35 @@ export function remember(files) {
   for (const f of files) meta.set(f.id, f);
 }
 export const known = id => meta.has(id);
+
+/*
+ * 파일 정보를 확보한다.
+ *
+ * 썸네일을 받으려면 thumbnailLink 가 필요한데, 그건 drive 목록에만 있고
+ * catalog.json 에는 저장하지 않는다(수명이 짧아서 저장해봐야 곧 죽는다).
+ * 예전에는 앱을 열 때마다 동기화를 돌려 이 정보가 늘 채워져 있었다.
+ * 동기화를 버튼으로 뺀 순간, 앱을 열면 meta 가 텅 빈 채로 남아
+ * **썸네일이 한 장도 안 뜨는** 상태가 됐다. IDB 에 캐시된 것만 보이는데,
+ * 크기를 288 로 바꾸면서 그 캐시마저 전부 무효가 됐으니 결국 아무것도
+ * 안 보였다.
+ *
+ * 그래서 없으면 그때 한 장씩 물어본다. 어차피 썸네일을 받으려고 네트워크를
+ * 쓰는 참이고, 캐시에 있는 사진은 여기까지 오지도 않는다.
+ */
+const metaWait = new Map();
+
+function fileMeta(id) {
+  const hit = meta.get(id);
+  if (hit) return Promise.resolve(hit);
+  if (metaWait.has(id)) return metaWait.get(id);
+
+  const p = getFile(id, 'id,name,thumbnailLink')
+    .then(f => { if (f) meta.set(id, f); return f || null; })
+    .catch(() => null)
+    .finally(() => metaWait.delete(id));
+  metaWait.set(id, p);
+  return p;
+}
 
 const key = (id, size) => `${id}@${size}`;
 
@@ -217,9 +246,11 @@ function gridUrl(id) {
  * 몇십 장만 섞여 있어도 미리 받기가 통째로 무너진다.
  */
 async function rawBlob(id, size, allowOriginal = false) {
-  const f = meta.get(id);
-  if (!f) return null;
-  return run(() => thumbBlob(f, size, { allowOriginal }));
+  return run(async () => {
+    const f = await fileMeta(id);
+    if (!f) return null;
+    return thumbBlob(f, size, { allowOriginal });
+  });
 }
 
 function apply(img, url, k) {
@@ -297,7 +328,8 @@ export async function prefetch(ids, { onProgress, shouldStop } = {}) {
   // 이미 있는 것은 건너뛴다. 두 번째 실행이 즉시 끝나는 이유다.
   const keys = ids.map(id => key(id, GRID));
   const have = await store.hasMany(keys);
-  const todo = ids.filter((id, i) => !have.has(keys[i]) && meta.has(id));
+  // meta 가 없어도 된다 — rawBlob 이 필요하면 그때 물어본다.
+  const todo = ids.filter((id, i) => !have.has(keys[i]));
 
   const total = todo.length;
   let done = 0;

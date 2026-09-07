@@ -238,7 +238,6 @@ async function prefetchThumbs() {
   if (prefetching) return;
   const ids = Object.keys(S.cat.photos);
   if (!ids.length) { toast('먼저 동기화로 사진 목록을 받아 주세요'); return; }
-  if (!th.known(ids[0])) { toast('먼저 동기화를 한 번 해주세요'); return; }
 
   prefetching = true;
   let stop = false;
