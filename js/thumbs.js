@@ -245,11 +245,21 @@ function gridUrl(id) {
  * 만나면 그냥 빈 타일로 두는 편이 낫다 — 원본은 장당 수 MB 라, 그런 파일이
  * 몇십 장만 섞여 있어도 미리 받기가 통째로 무너진다.
  */
+let warned = 0;
+
 async function rawBlob(id, size, allowOriginal = false) {
   return run(async () => {
     const f = await fileMeta(id);
-    if (!f) return null;
-    return thumbBlob(f, size, { allowOriginal });
+    if (!f) {
+      if (warned++ < 3) console.warn('[thumb] 파일 정보를 못 받음', id);
+      return null;
+    }
+    if (!f.thumbnailLink) {
+      if (warned++ < 3) console.warn('[thumb] thumbnailLink 없음', f.name || id);
+    }
+    const b = await thumbBlob(f, size, { allowOriginal });
+    if (!b && warned++ < 3) console.warn('[thumb] 받기 실패', f.name || id, f.thumbnailLink);
+    return b;
   });
 }
 

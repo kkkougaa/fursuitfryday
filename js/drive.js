@@ -71,26 +71,40 @@ export async function getFile(id, fields = 'id,name,mimeType') {
 /**
  * 썸네일을 **blob 그대로** 준다.
  *
- * 예전에는 여기서 blob URL 을 만들어 돌려줬고, 부르는 쪽은 그 URL 을 다시
- * fetch 해서 blob 을 얻었다. 한 장을 받을 때마다 같은 이미지가 메모리에 두 벌
- * 생겼다는 뜻이다. 미리 받기처럼 수천 장을 연달아 돌리면 이것만으로 터진다.
+ * ── 인증에 대해 (여기서 한 번 크게 틀렸다) ──────────────────────
+ * thumbnailLink 는 lh3.googleusercontent.com 을 가리킨다. 한때 이 링크는
+ * 서명돼 있으니 헤더 없이 받으면 CORS 프리플라이트를 피할 수 있다고 보고
+ * 그냥 fetch 했는데, **전부 실패했다.** 이 링크는 공개가 아니라서 토큰이든
+ * 구글 쿠키든 인증이 있어야 한다. 원래 코드처럼 api() 로 Bearer 를 붙여
+ * 받는 것이 맞다.
  *
- * thumbnailLink 는 lh3.googleusercontent.com 을 가리킨다. Authorization
- * 헤더를 붙이면 프리플라이트가 생기고 CORS 로 막히는 경우가 있어 헤더 없이
- * 부른다 — 링크 자체가 서명돼 있어 토큰이 필요 없다.
+ * 그래도 헤더 없는 요청을 뒤에 남겨 둔다. 계정·브라우저에 따라 Bearer
+ * 요청이 CORS 로 막히는 경우가 실제로 보고돼 있어서, 그때는 쿠키로 받는
+ * 쪽이 통한다. 둘 다 실패했을 때만 포기한다.
+ *
+ * blob URL 이 아니라 blob 을 돌려주는 것은 그대로 둔다. URL 을 만들어
+ * 넘기면 받는 쪽이 다시 fetch 해서 같은 이미지가 메모리에 두 벌 생긴다.
  *
  * @param {boolean} allowOriginal 썸네일이 없을 때 원본을 받을지.
- *   원본은 장당 수 MB 라 그리드·미리 받기에서는 절대 켜면 안 된다.
- *   기본값이 false 인 이유다.
+ *   원본은 장당 수 MB 라 그리드·미리 받기에서는 켜지 않는다.
  */
 export async function thumbBlob(file, size = 400, { allowOriginal = false } = {}) {
   if (file.thumbnailLink) {
     const link = file.thumbnailLink.replace(/=s\d+(-c)?$/, `=s${size}`);
+
+    // 1) 토큰을 붙여서 — 원래부터 동작하던 방식
     try {
-      const res = await fetch(link);
+      const res = await api(link);
       if (res.ok) return res.blob();
-    } catch { /* CORS·네트워크 — 아래로 */ }
+    } catch { /* CORS·만료 — 아래로 */ }
+
+    // 2) 구글 세션 쿠키에 기대서
+    try {
+      const res = await fetch(link, { credentials: 'include' });
+      if (res.ok) return res.blob();
+    } catch { /* 아래로 */ }
   }
+
   if (!allowOriginal) return null;
   const res = await api(`${FILES}/${file.id}?alt=media`);
   return res.blob();

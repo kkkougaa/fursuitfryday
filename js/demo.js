@@ -61,7 +61,7 @@ export function install() {
         cameraModel: cam, lens,
         iso: [100, 200, 400, 640, 1250][i % 5],
         exposure: `1/${[125, 200, 320, 500, 1000][i % 5]}s · f/${[1.8, 2.0, 2.8, 4.0, 5.6][i % 5]}`,
-        event: null, shooter: null, people: [], tags: [], usages: [],
+        event: null, shooter: null, people: [], tags: [], usages: [], plannedAt: null,
       };
     }
   });
