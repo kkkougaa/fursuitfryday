@@ -153,6 +153,8 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .strip.blue .k,.strip.blue .v,.strip.blue .chev{color:var(--blue)}
 .strip.plan{background:var(--c-purple-f)}
 .strip.plan .k,.strip.plan .v,.strip.plan .chev{color:var(--c-purple)}
+.synced{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;margin-top:10px;padding:6px;font-size:12px;font-weight:600;letter-spacing:-.02em;color:var(--g500);transition:opacity var(--d-1)}
+.synced:active{opacity:.5}
 
 /* ---------- 세그먼트 ---------- */
 .segwrap{position:sticky;top:0;z-index:4;background:var(--bg);padding:14px 20px 10px}
