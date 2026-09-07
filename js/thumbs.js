@@ -45,6 +45,11 @@ const inflight = new Map();
 let provider = null;      // 데모 모드용 — 드라이브 대신 로컬 생성
 export function setProvider(fn) { provider = fn; }
 
+/* ?nothumb=1 진단용. 썸네일을 한 장도 받지 않는다. 이걸 켜고도 죽는다면
+   원인은 이미지가 아니라 다른 곳에 있다. */
+let off = false;
+export function disable() { off = true; }
+
 export function remember(files) {
   for (const f of files) meta.set(f.id, f);
 }
@@ -105,11 +110,25 @@ const io = new IntersectionObserver(entries => {
  * 화면에 보이는 앞쪽 몇 장은 관찰을 기다리지 않고 바로 받는다 —
  * 첫 화면이 비어 보이는 것을 막는 데 이게 제일 크다.
  */
-/* 안 보이는 화면(display:none)의 타일은 받지 않는다. 탭을 옮기면 그때
-   그 화면이 다시 그려지면서 받는다. */
-const onScreen = img => !!img.offsetParent;
+/*
+ * 안 보이는 탭의 타일은 받지 않는다. 탭을 옮기면 그때 그 화면이 다시
+ * 그려지면서 받는다.
+ *
+ * offsetParent 로 판단하면 안 된다. push() 는 화면을 다 만든 **뒤에** 문서에
+ * 붙이기 때문에, 그 안에서 warm() 을 부르는 시점에는 아직 문서 밖이라
+ * offsetParent 가 null 이다. 그래서 그룹 상세·일정·사진 상세의 썸네일이
+ * 통째로 안 뜬다.
+ *
+ * 실제로 걸러야 하는 건 "display:none 인 탭 화면 안에 있는 것" 하나뿐이다.
+ * 탭 화면 밖(푸시 화면, 시트)이거나 아직 문서에 안 붙었으면 그냥 받는다.
+ */
+function onScreen(img) {
+  const sc = img.closest?.('.screen');
+  return !sc || sc.classList.contains('on');
+}
 
 export function observe(img, eager = false) {
+  if (off) return;
   const id = img.dataset.fid;
   if (!id) return;
   if (!onScreen(img)) return;
@@ -122,6 +141,7 @@ export function observe(img, eager = false) {
 
 /** 목록을 렌더한 직후 호출 — IDB 를 한 번에 읽어 보이는 부분을 즉시 채운다. */
 export async function warm(imgs, eagerCount = 14) {
+  if (off) return;
   const list = [...imgs].filter(onScreen);
   const ids = list.map(i => i.dataset.fid).filter(Boolean);
   if (!ids.length) return;
@@ -217,6 +237,7 @@ function apply(img, url, k) {
 let bigSlot = null;   // { k, url }
 
 export async function big(id, size = 1200) {
+  if (off) return null;
   const k = key(id, size);
   if (bigSlot && bigSlot.k === k) return bigSlot.url;
 
