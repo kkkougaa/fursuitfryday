@@ -7,7 +7,7 @@
  * 초기 상태를 진짜처럼 만들기 위해 **행사·작가를 하나도 지정하지 않은 상태**로
  * 시작한다. 그래야 "확인할 것" 제안과 분류 흐름을 검증할 수 있다.
  */
-import { S, emptyCatalog } from './store.js';
+import { S, emptyCatalog, invalidatePhotos } from './store.js';
 import * as th from './thumbs.js';
 
 const DAYS = [
@@ -33,6 +33,7 @@ export function install() {
       if (saved && saved.photos && Object.keys(saved.photos).length) {
         Object.keys(saved.photos).forEach(id => palFromId(id));
         S.cat = saved;
+        invalidatePhotos();
         S.demo = true;
         S.catFileId = 'demo';
         S.dirty = false;
@@ -105,6 +106,7 @@ export function install() {
   ];
 
   S.cat = cat;
+  invalidatePhotos();
   S.demo = true;
   S.catFileId = 'demo';
   S.dirty = false;

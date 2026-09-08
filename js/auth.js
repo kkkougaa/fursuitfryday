@@ -25,8 +25,10 @@ function hasAll(granted) {
   return REQUIRED.every(s => g.has(s));
 }
 
-/** 이 브라우저가 현재 스코프 전부에 동의한 적이 있는가 */
-function everGranted() {
+/** 이 브라우저가 현재 스코프 전부에 동의한 적이 있는가.
+ *  동의한 적이 있으면 만료돼도 로그인 화면을 띄울 필요가 없다 —
+ *  prompt=none 으로 조용히 다시 받아오면 된다. */
+export function everGranted() {
   try { return hasAll(localStorage.getItem(GRANT_KEY)); } catch { return false; }
 }
 

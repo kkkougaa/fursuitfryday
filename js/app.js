@@ -2,9 +2,11 @@
 import { CONFIG, isConfigured } from './config-load.js';
 import * as auth from './auth.js';
 import * as drive from './drive.js';
-import { S, load, syncFiles, touch, flush, onSaved, photos, applyAccent } from './store.js';
+import { S, load, syncFiles, touch, flush, onSaved, photos, applyAccent, backupIfDue } from './store.js';
 import * as sug from './suggest.js';
 import * as th from './thumbs.js';
+import * as av from './avatar.js';
+import { t, LANGS, getLang, setLang } from './i18n.js';
 import { $, el, ic, fmt, toast, openSheet, closeSheet, confirmSheet } from './ui.js';
 import { V, renderAll, goTab, renderTabs, renderHome, renderPhotos, renderSettings, wirePhotoChrome, wireHomeSync } from './screens.js';
 
@@ -28,12 +30,42 @@ function showGate(msg) {
   gate.hidden = false;
   gate.innerHTML = `<div class="mark">${ic('layers', 38, 2)}</div>`
     + `<h1>#FursuitFryday</h1>`
-    + `<p>${msg || '행사 사진에 행사·사진사·퍼슈트를 붙이고,<br>어느 컷을 올렸는지 기록합니다.'}</p>`;
-  const b = el('button', 'btn', '구글로 시작하기');
+    + `<p>${msg || t('gate.lede')}</p>`;
+  /* 처음 여는 사람이 실제로 막히는 세 지점만 미리 알려 준다.
+     오류 메시지로 게이트를 띄운 경우(msg)에는 넣지 않는다 — 그때는
+     지금 무엇이 잘못됐는지가 먼저 읽혀야 한다. */
+  if (!msg) {
+    const g = el('div', 'guide');
+    [
+      t('gate.step1'), t('gate.step2'), t('gate.step3'),
+    ].forEach((tx, i) => {
+      g.appendChild(el('div', 'gi', `<span class="n">${i + 1}</span><span class="tx">${tx}</span>`));
+    });
+    gate.appendChild(g);
+  }
+
+  const b = el('button', 'btn', t('gate.start'));
   b.style.maxWidth = '320px';
   b.onclick = () => auth.login({ resume: V.tab });
   gate.appendChild(b);
-  gate.appendChild(el('p', 'fine', '드라이브에서 <b>내가 고른 폴더만</b> 읽습니다.<br>사진은 절대 수정하지 않습니다.'));
+  gate.appendChild(el('p', 'fine', t('gate.fine')));
+
+  if (!msg && !DEMO) {
+    // 로그인 전에 무엇인지 보고 싶은 사람을 위한 출구
+    const d = el('button', 'demo', t('gate.demo'));
+    d.onclick = () => { location.search = '?demo=1'; };
+    gate.appendChild(d);
+  }
+
+  if (!msg) {
+    const langs = el('div', 'langs');
+    LANGS.forEach(l => {
+      const b2 = el('button', getLang() === l.k ? 'on' : '', l.name);
+      b2.onclick = () => { setLang(l.k); showGate(msg); };
+      langs.appendChild(b2);
+    });
+    gate.appendChild(langs);
+  }
 }
 
 function showShell() {
@@ -45,12 +77,12 @@ function showShell() {
 function progress(title, sub, onCancel) {
   const s = openSheet(`<h3>${title}</h3><p class="lead" id="pg-sub">${sub || ''}</p>`
     + `<div class="bar"><i id="pg-bar" style="width:8%"></i></div>`
-    + `<div class="lead" id="pg-n" style="margin:12px 0 0;text-align:center">준비 중…</div>`
-    + (onCancel ? `<button class="btn sub" id="pg-stop" style="width:100%;margin-top:16px">중단</button>` : ''));
+    + `<div class="lead" id="pg-n" style="margin:12px 0 0;text-align:center">${t('sync.preparing')}</div>`
+    + (onCancel ? `<button class="btn sub" id="pg-stop" style="width:100%;margin-top:16px">${t('sync.stop')}</button>` : ''));
   if (onCancel) {
     const b = s.querySelector('#pg-stop');
     // 누른 즉시 눌렀다는 걸 보여준다. 실제 중단은 진행 중인 묶음이 끝난 뒤다.
-    if (b) b.onclick = () => { b.disabled = true; b.textContent = '중단하는 중…'; onCancel(); };
+    if (b) b.onclick = () => { b.disabled = true; b.textContent = t('sync.stopping'); onCancel(); };
   }
   return {
     set(pct, text) {
@@ -71,10 +103,9 @@ function progress(title, sub, onCancel) {
  */
 function scopeSheet() {
   openSheet(
-    '<h3>사진을 읽을 권한이 없어요</h3>'
-    + '<p class="lead">고른 폴더 안을 읽으려면 드라이브 <b>보기 권한</b>이 필요합니다. '
-    + '동의 화면에서 체크를 빼셨거나, 아직 이 권한에 동의하지 않은 상태예요.</p>'
-    + '<button class="btn pri" id="scope-again">권한 다시 요청</button>'
+    `<h3>${t('sync.scopeTitle')}</h3>`
+    + `<p class="lead">${t('sync.scopeLead')}</p>`
+    + `<button class="btn pri" id="scope-again">${t('sync.scopeAgain')}</button>`
   );
   const b = document.getElementById('scope-again');
   if (b) b.onclick = () => auth.login({ resume: V.tab });
@@ -88,12 +119,12 @@ async function pickFolders() {
     const have = new Set(S.cat.folders.map(f => f.id));
     picked.forEach(f => { if (!have.has(f.id)) S.cat.folders.push({ id: f.id, name: f.name }); });
     touch();
-    toast(`폴더 ${picked.length}개를 연결했어요`);
+    toast(t('sync.folderLinked', { n: picked.length }));
     await sync();
   } catch (e) {
     if (e.needAuth) return relogin();
     if (e.needScope) return scopeSheet();
-    toast('폴더를 고르지 못했어요');
+    toast(t('sync.folderPickFail'));
     console.error(e);
   }
 }
@@ -103,37 +134,53 @@ let syncing = false;
 
 async function sync() {
   if (syncing) return;
-  if (!S.cat.folders.length) { toast('먼저 폴더를 연결해 주세요'); return; }
+  if (!S.cat.folders.length) { toast(t('sync.folderFirst')); return; }
   syncing = true;
   syncBtn(true);
 
   /* 중단은 썸네일 준비 단계에만 걸린다. 목록 읽기와 저장은 중간에 끊으면
      기록이 어중간해지므로 끝까지 간다 — 어차피 몇 초다. */
   let stopThumbs = false;
-  const pg = progress('동기화', '드라이브 목록을 읽고 있어요. 사진은 수정하지 않습니다.',
+  const pg = progress(t('sync.title'), t('sync.reading'),
     () => { stopThumbs = true; });
 
   try {
-    const files = await drive.listImages(
+    const { files, folders } = await drive.listImages(
       S.cat.folders.map(f => f.id),
-      n => pg.set(Math.min(50, 6 + n / 40), `${fmt(n)}장 찾음`),
+      n => pg.set(Math.min(50, 6 + n / 40), t('sync.found', { n: fmt(n) })),
     );
     th.remember(files);
 
-    // 폴더별 개수 기록 (설정 화면 표시용)
-    const byParent = new Map();
-    files.forEach(f => (f.parents || []).forEach(p => byParent.set(p, (byParent.get(p) || 0) + 1)));
-    S.cat.folders.forEach(f => { f.count = byParent.get(f.id) ?? f.count ?? 0; });
+    /* 폴더별 개수 (설정 화면 표시용).
+       예전에는 parents 가 루트와 같은 것만 셌다. 그래서 하위 폴더로 정리해 둔
+       사람은 연결한 폴더가 늘 "0개" 로 보였다. 부모를 타고 올라가 루트를
+       찾아서 센다. */
+    const parentOf = new Map(folders.map(f => [f.id, f.parent]));
+    const roots = new Set(S.cat.folders.map(f => f.id));
+    const rootOf = id => {
+      let cur = id;
+      for (let i = 0; cur && i < 24; i++) {          // 순환 폴더 방어
+        if (roots.has(cur)) return cur;
+        cur = parentOf.get(cur) || null;
+      }
+      return null;
+    };
+    const byRoot = new Map();
+    files.forEach(f => {
+      const r0 = rootOf((f.parents || [])[0]);
+      if (r0) byRoot.set(r0, (byRoot.get(r0) || 0) + 1);
+    });
+    S.cat.folders.forEach(f => { f.count = byRoot.get(f.id) ?? f.count ?? 0; });
 
-    pg.set(55, '기록과 대조하는 중…');
-    const r = syncFiles(files);
+    pg.set(55, t('sync.comparing'));
+    const r = syncFiles(files, folders);
 
     // 사용자가 "앞으로 자동" 을 켠 카메라 규칙만 조용히 적용
     const auto = sug.applyRules(r.addedIds);
 
     /* 기록을 먼저 저장한다. 아래 썸네일 단계는 길고 중단할 수 있는데,
        그때 분류 기록까지 날아가면 안 된다. */
-    pg.set(62, '저장하는 중…');
+    pg.set(62, t('sync.saving'));
     await flush();
 
     /* 썸네일 준비 — 아직 기기에 없는 것만 받아 IndexedDB 에 넣는다. 화면에
@@ -142,13 +189,13 @@ async function sync() {
     const pre = await th.prefetch(Object.keys(S.cat.photos), {
       shouldStop: () => stopThumbs,
       onProgress: ({ done, total, failed }) => {
-        if (!total) { pg.set(96, '썸네일은 이미 준비돼 있어요'); return; }
+        if (!total) { pg.set(96, t('sync.thumbsReady')); return; }
         pg.set(65 + (done / total) * 31,
-          `썸네일 ${fmt(done)} / ${fmt(total)}장${failed ? ` · 실패 ${fmt(failed)}` : ''}`);
+          `${t('pre.progress', { done: fmt(done), total: fmt(total) })}${failed ? ` · ${t('sync.failCount', { n: fmt(failed) })}` : ''}`);
       },
     });
 
-    pg.set(100, '완료');
+    pg.set(100, t('sync.done'));
     setTimeout(() => pg.done(), 260);
 
     // 폴더는 붙었는데 한 장도 안 나오는 경우. 예전에는 여기서 아무 말이 없어
@@ -157,35 +204,33 @@ async function sync() {
       // 진행 시트가 260ms 뒤에 닫히므로, 그 뒤에 띄워야 같이 사라지지 않는다.
       setTimeout(() => {
         openSheet(
-          '<h3>폴더는 연결됐는데 사진이 0장이에요</h3>'
-          + '<p class="lead">폴더가 비어 있거나, 앱에 드라이브 보기 권한이 없을 때 이렇게 됩니다. '
-          + '폴더에 사진이 있는 게 확실하다면 권한을 다시 받아 보세요.</p>'
-          + '<button class="btn pri" id="empty-again">권한 다시 요청</button>'
+          `<h3>${t('sync.emptyTitle')}</h3>`
+          + `<p class="lead">${t('sync.emptyLead')}</p>`
+          + `<button class="btn pri" id="empty-again">${t('sync.scopeAgain')}</button>`
         );
         const b = document.getElementById('empty-again');
         if (b) b.onclick = () => auth.login({ resume: V.tab });
       }, 700);
     }
 
-    const bits = [`${fmt(r.total)}장`];
-    if (r.added) bits.push(`새로 ${fmt(r.added)}장`);
+    const bits = [t('sync.total', { n: fmt(r.total) })];
+    if (r.added) bits.push(t('sync.added', { n: fmt(r.added) }));
     if (pre.total) {
       bits.push(stopThumbs
-        ? `썸네일 ${fmt(pre.done)}장까지`
-        : `썸네일 ${fmt(pre.done - pre.failed)}장 준비`);
+        ? t('sync.thumbsUpto', { n: fmt(pre.done) })
+        : t('sync.thumbsPrepared', { n: fmt(pre.done - pre.failed) }));
     }
-    if (auto) bits.push(`자동 분류 ${fmt(auto)}장`);
-    if (r.vanished) bits.push(`사라진 ${fmt(r.vanished)}장`);
+    if (auto) bits.push(t('sync.autoFiled', { n: fmt(auto) }));
+    if (r.vanished) bits.push(t('sync.vanished', { n: fmt(r.vanished) }));
     toast(bits.join(' · '));
 
     renderAll();
 
     if (r.vanishedUsed.length) {
       setTimeout(() => confirmSheet({
-        title: '사라진 사진 중 올린 게 있어요',
-        lead: `SNS에 올린 기록이 있는 <b>${fmt(r.vanishedUsed.length)}장</b>이 드라이브에서 없어졌습니다. `
-          + '기록은 지우지 않고 보관했습니다 — 원본이 사라져도 "이 사진을 올렸다"는 사실은 유효하니까요. 폴더가 옮겨진 것인지 확인해 보세요.',
-        ok: '알겠어요',
+        title: t('sync.goneTitle'),
+        lead: `${t('sync.goneUsed', { n: fmt(r.vanishedUsed.length) })} ${t('sync.goneLead')}`,
+        ok: t('sync.gotIt'),
         onOk: () => {},
       }), 700);
     }
@@ -193,15 +238,14 @@ async function sync() {
     pg.done();
     if (e.needAuth) return relogin();
     if (e.needScope) return scopeSheet();
-    if (e.offline) { toast('네트워크에 연결되지 않았어요'); return; }
+    if (e.offline) { toast(t('sync.offline')); return; }
     console.error(e);
     if (e.status === 404) {
-      openSheet('<h3>폴더를 찾지 못했어요</h3>'
-        + '<p class="lead">연결한 폴더가 지워졌거나 다른 계정으로 옮겨졌을 수 있습니다. '
-        + '설정에서 연결을 끊고 다시 골라 주세요.</p>'
-        + '<button class="btn" onclick="this.closest(\'#sheet\').classList.remove(\'on\');document.getElementById(\'scrim\').classList.remove(\'on\')">닫기</button>');
+      openSheet(`<h3>${t('sync.noFolderTitle')}</h3>`
+        + `<p class="lead">${t('sync.noFolderLead')}</p>`
+        + `<button class="btn" onclick="this.closest('#sheet').classList.remove('on');document.getElementById('scrim').classList.remove('on')">${t('common.close')}</button>`);
     } else {
-      toast('동기화에 실패했어요');
+      toast(t('sync.failed'));
     }
   } finally {
     syncing = false;
@@ -215,12 +259,47 @@ function syncBtn(busy) {
   const b = document.getElementById('home-sync');
   if (!b) return;
   b.disabled = busy;
-  b.textContent = busy ? '동기화 중…' : '동기화';
+  b.textContent = busy ? t('sync.running') : t('sync.title');
   b.style.opacity = busy ? '.45' : '';
 }
 
 function relogin() {
-  toast('로그인이 만료됐어요');
+  toast(t('sync.expired'));
+  auth.login({ silent: true, resume: V.tab });
+}
+
+/* ---------- 무인 재로그인 ----------
+ *
+ * 액세스 토큰은 1시간이고, 브라우저 전용이라 리프레시 토큰이 없다.
+ * 그래도 구글 세션 쿠키가 살아 있으면 prompt=none 리다이렉트로 화면 없이
+ * 다시 받아올 수 있다. 세션 쿠키는 보통 몇 달 남으니, 실제로는
+ * "한 번 로그인하면 계속" 에 가깝게 동작한다.
+ *
+ * 그런데 예전에는 그 길을 거의 타지 못했다.
+ *   · 부팅할 때 만료돼 있으면 시도도 안 하고 게이트를 띄웠다
+ *   · 만료 감시 조건이 `left > 0` 이라 **이미 만료된 경우가 빠져** 있었다
+ *   · 감시는 setInterval 인데 iOS 는 백그라운드에서 타이머를 잰다 —
+ *     만료 5분 전 구간은 대개 앱이 백그라운드일 때 지나간다
+ * 그래서 매번 로그인 버튼을 눌러야 했다.
+ *
+ * 실패했을 때 계속 리다이렉트하지 않도록 시도 여부를 세션에 남긴다.
+ * 성공해서 유효한 토큰을 들고 있으면 지운다 — 다음 만료 때 다시 쓸 수 있게.
+ */
+const SILENT_KEY = 'cd.silent.tried';
+const triedSilent = () => { try { return sessionStorage.getItem(SILENT_KEY) === '1'; } catch { return false; } };
+const markSilent = on => {
+  try { on ? sessionStorage.setItem(SILENT_KEY, '1') : sessionStorage.removeItem(SILENT_KEY); } catch { /* 프라이빗 모드 */ }
+};
+
+let booted = false;
+
+/** 남은 시간이 짧으면 조용히 갱신한다. 넉넉하면 아무것도 하지 않는다. */
+function maybeRenew() {
+  if (DEMO || !isConfigured() || !booted) return;
+  if (!auth.everGranted()) return;      // 동의한 적이 없으면 게이트가 맞다
+  if (triedSilent()) return;            // 방금 실패했다 — 리다이렉트 반복 금지
+  if (auth.secondsLeft() > 300) return; // 5분 넘게 남았으면 그냥 둔다
+  markSilent(true);
   auth.login({ silent: true, resume: V.tab });
 }
 
@@ -228,7 +307,11 @@ function relogin() {
 onSaved(() => { if (V.tab === 'settings') renderSettings(); });
 
 /* 화면을 벗어나기 전에 저장을 밀어 넣는다 — iOS 는 탭이 백그라운드로 가면 잰다. */
-addEventListener('visibilitychange', () => { if (document.hidden) flush().catch(() => {}); });
+addEventListener('visibilitychange', () => {
+  if (document.hidden) { flush().catch(() => {}); return; }
+  // 돌아왔을 때 백그라운드에서 놓친 갱신 창을 여기서 메운다
+  maybeRenew();
+});
 addEventListener('pagehide', () => { flush().catch(() => {}); });
 
 /* ---------- 썸네일 미리 받기 ---------- */
@@ -237,12 +320,11 @@ let prefetching = false;
 async function prefetchThumbs() {
   if (prefetching) return;
   const ids = Object.keys(S.cat.photos);
-  if (!ids.length) { toast('먼저 동기화로 사진 목록을 받아 주세요'); return; }
+  if (!ids.length) { toast(t('sync.needFirst')); return; }
 
   prefetching = true;
   let stop = false;
-  const pg = progress('썸네일 미리 받기',
-    '기기에 저장해 둡니다. 사진은 화면에 띄우지 않으니 앱이 무거워지지 않아요.',
+  const pg = progress(t('pre.title'), t('pre.lead'),
     () => { stop = true; });
 
   try {
@@ -250,20 +332,20 @@ async function prefetchThumbs() {
       shouldStop: () => stop,
       onProgress: ({ done, total, failed }) => {
         pg.set(total ? (done / total) * 100 : 100,
-          total ? `${fmt(done)} / ${fmt(total)}장${failed ? ` · 실패 ${fmt(failed)}` : ''}` : '받을 것이 없어요');
+          total ? `${t('pre.count', { done: fmt(done), total: fmt(total) })}${failed ? ` · ${t('sync.failCount', { n: fmt(failed) })}` : ''}` : t('pre.nothing'));
       },
     });
     pg.done();
-    if (!r.total) toast('이미 전부 저장돼 있어요');
-    else if (stop) toast(`중단했어요 · ${fmt(r.done)}장 저장`);
-    else toast(`${fmt(r.done - r.failed)}장을 기기에 저장했어요${r.failed ? ` · 실패 ${fmt(r.failed)}` : ''}`);
+    if (!r.total) toast(t('pre.allDone'));
+    else if (stop) toast(t('pre.stopped', { n: fmt(r.done) }));
+    else toast(`${t('pre.saved', { n: fmt(r.done - r.failed) })}${r.failed ? ` · ${t('sync.failCount', { n: fmt(r.failed) })}` : ''}`);
     renderSettings();
   } catch (e) {
     pg.done();
     if (e.needAuth) return relogin();
     if (e.needScope) return scopeSheet();
     console.error(e);
-    toast('미리 받기에 실패했어요');
+    toast(t('pre.fail'));
   } finally {
     prefetching = false;
   }
@@ -273,7 +355,7 @@ async function prefetchThumbs() {
 async function wireShell() {
   wirePhotoChrome();
   wireHomeSync();
-  if (NOTHUMB) { th.disable(); toast('진단 모드 · 썸네일을 받지 않습니다'); }
+  if (NOTHUMB) { th.disable(); toast(t('demo.diagMode')); }
   // 굴절 유리는 지원하는 브라우저에만. 사파리는 레이어드 CSS 유리로 남는다.
   try {
     if (NOGLASS) throw new Error('noglass');
@@ -296,40 +378,51 @@ async function bootDemo() {
   applyAccent(S.cat.opts.accent);
   showShell();
   await wireShell();
-  V.onSync = () => toast('데모 모드예요. 드라이브에 연결되지 않습니다');
-  V.onPickFolders = () => toast('데모 모드예요. 폴더를 고를 수 없습니다');
-  V.onPrefetch = () => toast('데모 모드예요. 받아올 사진이 없습니다');
+  V.onSync = () => toast(t('demo.noDrive'));
+  V.onPickFolders = () => toast(t('demo.noPick'));
+  V.onPrefetch = () => toast(t('demo.noFetch'));
   V.onLogout = () => { location.search = ''; };
   renderAll();
   goTab('home');
-  setTimeout(() => toast(`데모 · 사진 ${fmt(n)}장 · 아직 분류 전이에요`), 500);
+  setTimeout(() => toast(t('demo.hello', { n: fmt(n) })), 500);
 }
 
 async function boot() {
   if (DEMO) return bootDemo();
 
   if (!isConfigured()) {
-    showGate('config.js 에 <b>CLIENT_ID</b> 와 <b>API_KEY</b> 를 넣어주세요.<br>README 의 설정 순서를 따라가면 5분입니다.');
+    showGate(t('gate.noConfig'));
     const b = gate.querySelector('.btn');
-    b.textContent = '데모로 먼저 둘러보기';
+    b.textContent = t('gate.tryDemo');
     b.onclick = () => { location.search = '?demo=1'; };
     return;
   }
 
   const { resumed, error } = auth.consumeRedirect();
   if (error === 'interaction_required' || error === 'login_required' || error === 'consent_required') {
-    showGate('다시 로그인해 주세요.');
+    showGate(t('gate.relogin'));
     return;
   }
   if (error === 'scope_denied') {
     // 반쪽 권한으로 들어가면 "폴더는 붙는데 사진이 0장"인 상태가 된다.
     // 아예 게이트에서 멈추고 다시 받게 한다.
-    showGate('사진을 읽으려면 드라이브 <b>보기 권한</b>이 필요합니다.<br>동의 화면에서 체크를 모두 켜 주세요.');
+    showGate(t('gate.needScope'));
     return;
   }
   if (error && error !== 'access_denied') console.warn('oauth', error);
 
-  if (!auth.isSignedIn()) { showGate(); return; }
+  if (!auth.isSignedIn()) {
+    /* 동의한 적이 있으면 로그인 화면을 보여줄 이유가 없다. 조용히 받아온다.
+       실패하면 위 consumeRedirect 가 login_required 로 돌아와 게이트를 띄운다. */
+    if (auth.everGranted() && !triedSilent()) {
+      markSilent(true);
+      auth.login({ silent: true, resume: V.tab });
+      return;
+    }
+    showGate();
+    return;
+  }
+  markSilent(false);   // 유효한 토큰을 들고 있다 — 다음 만료 때 다시 시도할 수 있게
 
   showShell();
   await wireShell();
@@ -337,8 +430,8 @@ async function boot() {
   V.onPickFolders = pickFolders;
   V.onPrefetch = prefetchThumbs;
   V.onLogout = () => confirmSheet({
-    title: '로그아웃할까요?', danger: true, ok: '로그아웃',
-    lead: '이 기기에서 토큰만 지웁니다. 드라이브의 catalog.json 은 그대로 남습니다.',
+    title: t('auth.logoutQ'), danger: true, ok: t('auth.logout'),
+    lead: t('auth.logoutLead'),
     onOk: () => { auth.logout(); location.reload(); },
   });
 
@@ -357,19 +450,33 @@ async function boot() {
        한 번도 동기화한 적이 없을 때만 알려 준다 — 폴더만 붙여두고 사진이
        안 보이면 고장으로 보이니까. */
     if (S.cat.folders.length && !S.cat.syncedAt) {
-      setTimeout(() => toast('오른쪽 위 동기화를 눌러 사진을 불러오세요'), 600);
+      setTimeout(() => toast(t('sync.needFirst')), 600);
     }
   } catch (e) {
-    if (e.needAuth) { showGate('다시 로그인해 주세요.'); return; }
+    if (e.needAuth) { showGate(t('gate.relogin')); return; }
     console.error(e);
-    toast('카탈로그를 읽지 못했어요');
+    toast(t('sync.catalogFail'));
     renderAll();
   }
 
-  // 만료 5분 전에 조용히 갱신
+  booted = true;
+
+  /* 첫 화면을 그린 다음에 손댄다 — 둘 다 급하지 않은 일이고,
+     동기화·썸네일과 네트워크를 다투면 첫 화면이 늦어진다. */
+  setTimeout(() => {
+    // ① 한도에 걸려 비어 있던 프로필 사진 채우기
+    av.backfill([...S.cat.shooters, ...S.cat.people])
+      .then(n => { if (n) { touch(); renderAll(); toast(t('avatar.got', { n: fmt(n) })); } })
+      .catch(() => { /* 조용히 넘어간다 */ });
+    // ② 하루 한 번 catalog 사본 남기기
+    backupIfDue().catch(() => {});
+  }, 3000);
+
+  /* 만료가 가까우면 조용히 갱신. 화면이 보일 때만 —
+     백그라운드에서 페이지를 넘겨 버리면 앱이 통째로 다시 뜬다. */
   setInterval(() => {
-    const left = auth.secondsLeft();
-    if (left > 0 && left < 300) auth.login({ silent: true, resume: V.tab });
+    if (document.hidden) return;
+    maybeRenew();
   }, 60_000);
 }
 

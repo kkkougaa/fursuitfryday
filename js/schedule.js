@@ -14,15 +14,16 @@
  *   짐 챙기기 — 매번 같은 것을 챙기므로 공용 목록(cat.packing)을 설정에서
  *              관리하고, 체크 상태만 행사별(events[].packed)로 남긴다.
  */
-import { S, touch, addEvent, photos, uid, catColor, shooterById } from './store.js';
+import { S, touch, touchNow, markDeleted, addEvent, photos, uid, catColor, shooterById } from './store.js';
 import * as th from './thumbs.js';
 import {
   $, el, ic, esc, fmt, push, popAll, openSheet, closeSheet,
   toast, confirmSheet, wireScroll, keepScroll, segment, flipSwitch,
 } from './ui.js';
-import { V, NO_FILTER, goTab, renderAll, renderHome, assignSheet } from './screens.js';
+import { V, NO_FILTER, goTab, renderAll, renderHome, assignSheet, reviewSheet } from './screens.js';
 import { catSheet, logoSheet } from './screens2.js';
 import { avatarHTML } from './ui.js';
+import { t } from './i18n.js';
 
 /* ---------- 날짜 ---------- */
 
@@ -48,12 +49,12 @@ export const dayCount = e => (e.endDate ? diff(e.endDate, e.date) + 1 : 1);
 
 /** 하루면 "2026.10.23", 여러 날이면 "2026.10.23 – 25 · 3일" */
 export function fmtRange(e) {
-  if (!e.date) return '날짜 미정';
+  if (!e.date) return t('sched.noDate');
   if (!e.endDate) return fmtDate(e.date);
   const [sy, sm] = e.date.split('-');
   const [ey, em, ed] = e.endDate.split('-');
   const tail = (sy === ey && sm === em) ? ed : (sy === ey ? `${em}.${ed}` : fmtDate(e.endDate));
-  return `${fmtDate(e.date)} – ${tail} · ${dayCount(e)}일`;
+  return `${fmtDate(e.date)} – ${tail} · ${t('sched.spanDays', { n: dayCount(e) })}`;
 }
 
 /**
@@ -74,12 +75,12 @@ export function phase(e) {
 /** 목록·카드에 쓰는 큰 글씨 / 작은 글씨 */
 export function ddayLabel(e) {
   const ph = phase(e);
-  if (ph.state === 'none') return { big: '–', sub: '미정', ph };
-  if (ph.state === 'before') return { big: `D-${ph.n}`, sub: `${ph.n}일 남음`, ph };
-  if (ph.state === 'after') return { big: `D+${ph.n}`, sub: `${ph.n}일 지남`, ph };
+  if (ph.state === 'none') return { big: '–', sub: t('sched.tbd'), ph };
+  if (ph.state === 'before') return { big: `D-${ph.n}`, sub: t('sched.daysLeft', { n: ph.n }), ph };
+  if (ph.state === 'after') return { big: `D+${ph.n}`, sub: t('sched.daysPast', { n: ph.n }), ph };
   return ph.of > 1
-    ? { big: `${ph.idx}일차`, sub: `${ph.of}일 중`, ph }
-    : { big: '오늘', sub: '진행 중', ph };
+    ? { big: t('sched.dayN', { n: ph.idx }), sub: t('sched.ofDays', { n: ph.of }), ph }
+    : { big: t('sched.today'), sub: t('sched.live'), ph };
 }
 
 const isLive = e => phase(e).state === 'during';
@@ -113,7 +114,7 @@ const subsAhead = e => subs(e).filter(x => !x.day || x.day >= todayStr());
 function subRow(e, x, onChange) {
   const r = el('button', 'subrow tapable');
   const multi = dayCount(e) > 1;
-  const dayLb = multi && x.day ? `${diff(x.day, e.date) + 1}일차` : '';
+  const dayLb = multi && x.day ? t('sched.dayN', { n: diff(x.day, e.date) + 1 }) : '';
   const meta = [dayLb, x.place].filter(Boolean).join(' · ');
   r.innerHTML = `<span class="tm">${esc(x.time || '--:--')}</span>`
     + `<span class="grow"><span class="tt">${esc(x.title)}</span>`
@@ -142,18 +143,18 @@ function subRow(e, x, onChange) {
 function subViewSheet(e, x) {
   const multi = dayCount(e) > 1;
   const when = [
-    multi && x.day ? `${diff(x.day, e.date) + 1}일차 · ${fmtDate(x.day).slice(5)}` : fmtDate(x.day || e.date),
+    multi && x.day ? `${t('sched.dayN', { n: diff(x.day, e.date) + 1 })} · ${fmtDate(x.day).slice(5)}` : fmtDate(x.day || e.date),
     x.time || null,
   ].filter(Boolean).join(' · ');
   openSheet(`<h3>${esc(x.title)}</h3><p class="lead">${esc(e.name)}</p>`
-    + `<dl class="kv"><div><dt>언제</dt><dd>${esc(when || '미정')}</dd></div>`
-    + (x.place ? `<div><dt>어디</dt><dd>${esc(x.place)}</dd></div>` : '')
+    + `<dl class="kv"><div><dt>${t('sched.when')}</dt><dd>${esc(when || t('sched.tbd'))}</dd></div>`
+    + (x.place ? `<div><dt>${t('sched.where')}</dt><dd>${esc(x.place)}</dd></div>` : '')
     + `</dl>`
     + (x.note
-      ? `<div class="fld" style="margin-top:14px"><label>메모</label><pre class="pv">${esc(x.note)}</pre></div>`
-      : `<div class="note" style="margin-top:14px">${ic('info', 17)}<span>메모가 없어요. 아래에서 적을 수 있습니다.</span></div>`)
-    + `<button class="btn" id="sv-edit" style="margin-top:16px">${ic('cal', 18, 2.1)}편집</button>`
-    + `<button class="btn sub" id="sv-go" style="width:100%;margin-top:8px">${ic('chev', 17, 2.2)}행사 열기</button>`);
+      ? `<div class="fld" style="margin-top:14px"><label>${t('sched.memo')}</label><pre class="pv">${esc(x.note)}</pre></div>`
+      : `<div class="note" style="margin-top:14px">${ic('info', 17)}<span>${t('sched.noMemo')}</span></div>`)
+    + `<button class="btn" id="sv-edit" style="margin-top:16px">${ic('cal', 18, 2.1)}${t('sched.edit')}</button>`
+    + `<button class="btn sub" id="sv-go" style="width:100%;margin-top:8px">${ic('chev', 17, 2.2)}${t('sched.openEvent')}</button>`);
   $('#sv-edit').onclick = () => subSheet(e, x, () => renderAll());
   $('#sv-go').onclick = () => { closeSheet(); openEvent(e.id); };
 }
@@ -168,31 +169,31 @@ function subSheet(e, x, after) {
       const d = new Date(`${e.date}T00:00:00`);
       d.setDate(d.getDate() + i);
       const key = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-      days.push({ key, label: `${i + 1}일차 · ${fmtDate(key).slice(5)}` });
+      days.push({ key, label: `${t('sched.dayN', { n: i + 1 })} · ${fmtDate(key).slice(5)}` });
     }
   }
-  openSheet(`<h3>${isNew ? '약속 추가' : '약속 편집'}</h3>`
-    + `<p class="lead">${esc(e.name)} 안에서 잡은 약속입니다.</p>`
-    + `<div class="fld"><label for="sb-t">무엇</label>`
-    + `<input id="sb-t" maxlength="40" value="${esc(x ? x.title : '')}" placeholder="예: 단체 사진 촬영"></div>`
+  openSheet(`<h3>${t(isNew ? 'sched.subAdd' : 'sched.subEdit')}</h3>`
+    + `<p class="lead">${t('sched.subLead', { name: esc(e.name) })}</p>`
+    + `<div class="fld"><label for="sb-t">${t('sched.what')}</label>`
+    + `<input id="sb-t" maxlength="40" value="${esc(x ? x.title : '')}" placeholder="${t('sched.subTitlePh')}"></div>`
     + (multi && days.length
-      ? `<div class="fld"><label for="sb-d">며칠차</label><select id="sb-d">`
+      ? `<div class="fld"><label for="sb-d">${t('sched.whichDay')}</label><select id="sb-d">`
         + days.map(d => `<option value="${d.key}"${(x ? x.day : e.date) === d.key ? ' selected' : ''}>${d.label}</option>`).join('')
         + `</select></div>`
       : '')
-    + `<div class="fld"><label for="sb-h">시각 (선택)</label>`
+    + `<div class="fld"><label for="sb-h">${t('sched.timeOpt')}</label>`
     + `<input id="sb-h" type="time" value="${esc(x && x.time ? x.time : '')}"></div>`
-    + `<div class="fld"><label for="sb-p">장소 (선택)</label>`
-    + `<input id="sb-p" maxlength="30" value="${esc(x && x.place ? x.place : '')}" placeholder="예: 3홀 포토존"></div>`
-    + `<div class="fld"><label for="sb-n">메모 (선택)</label>`
-    + `<textarea id="sb-n" maxlength="300" rows="3" placeholder="누구와 · 준비물 · 기억할 것">${esc(x && x.note ? x.note : '')}</textarea>`
-    + `<div class="hint">일정 목록에서 약속을 누르면 이 메모가 보입니다.</div></div>`
-    + `<button class="btn" id="sb-save">${isNew ? '추가' : '저장'}</button>`);
+    + `<div class="fld"><label for="sb-p">${t('sched.placeOpt')}</label>`
+    + `<input id="sb-p" maxlength="30" value="${esc(x && x.place ? x.place : '')}" placeholder="${t('sched.subPlacePh')}"></div>`
+    + `<div class="fld"><label for="sb-n">${t('sched.noteOpt')}</label>`
+    + `<textarea id="sb-n" maxlength="300" rows="3" placeholder="${t('sched.notePh')}">${esc(x && x.note ? x.note : '')}</textarea>`
+    + `<div class="hint">${t('sched.noteHint')}</div></div>`
+    + `<button class="btn" id="sb-save">${t(isNew ? 'common.add' : 'common.save')}</button>`);
 
-  const t = $('#sb-t');
+  const inT = $('#sb-t');
   $('#sb-save').onclick = () => {
-    const title = t.value.trim();
-    if (!title) { t.focus(); return; }
+    const title = inT.value.trim();
+    if (!title) { inT.focus(); return; }
     const rec = {
       id: x ? x.id : uid('sb'),
       day: $('#sb-d') ? $('#sb-d').value : e.date,
@@ -206,11 +207,11 @@ function subSheet(e, x, after) {
     else e.sub.push(rec);
     touch();
     closeSheet();
-    toast(isNew ? '약속을 추가했어요' : '저장했어요');
+    toast(isNew ? t('sched.subAdded') : t('common.saved'));
     if (after) after();
     renderAll();
   };
-  setTimeout(() => t.focus(), 340);
+  setTimeout(() => inT.focus(), 340);
 }
 
 /* ---------- 펼침 상태 (다시 그려도 유지) ---------- */
@@ -241,7 +242,7 @@ function wireExpand(key, host, panel, btn) {
 export function ddayCard() {
   const e = nextEvent();
   if (!e) {
-    const b = el('button', 'strip', `<span class="k">다음 행사를 등록해 주세요</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
+    const b = el('button', 'strip', `<span class="k">${t('sched.registerNext')}</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
     b.onclick = () => { goTab('schedule'); setTimeout(() => eventSheet(null), 120); };
     return b;
   }
@@ -259,16 +260,16 @@ export function ddayCard() {
   const bits = [fmtRange(e), e.place].filter(Boolean).join(' · ');
   main.innerHTML = (e.logo ? `<img class="evlogo sm" alt="" src="${e.logo}">` : '')
     + `<span class="col">`
-    + `<span class="k">${live ? '<i class="live-dot"></i>행사 진행 중'
-      : e.going === false ? '참가 미정' : '다음 행사'}</span>`
+    + `<span class="k">${live ? `<i class="live-dot"></i>${t('sched.liveEvent')}`
+      : e.going === false ? t('sched.goingNo') : t('sched.nextEvent')}</span>`
     + `<span class="nm">${esc(e.name)}</span>`
-    + `<span class="m">${esc(bits)}${pg.total ? ` · 준비 ${pg.done}/${pg.total}` : ''}</span></span>`;
+    + `<span class="m">${esc(bits)}${pg.total ? ` · ${t('sched.prep')} ${pg.done}/${pg.total}` : ''}</span></span>`;
   main.onclick = () => openEvent(e.id);
 
   const num = el('div', 'num', `<b>${d.big}</b><i>${esc(d.sub)}</i>`);
 
   const exp = el('button', 'exp');
-  exp.setAttribute('aria-label', '펼쳐 보기');
+  exp.setAttribute('aria-label', t('sched.expand'));
   exp.innerHTML = ic('chev', 20, 2.4);
 
   card.appendChild(main);
@@ -279,17 +280,17 @@ export function ddayCard() {
   /* 펼치면 이번 행사에 잡아둔 약속 + 체크리스트 */
   const panel = el('div', 'ddpanel');
   const inner = el('div', 'ddpanel-in');
-  inner.appendChild(el('div', 'panel-lb', `<span>잡아둔 약속</span><span>${ahead.length ? `${ahead.length}건` : '없음'}</span>`));
+  inner.appendChild(el('div', 'panel-lb', `<span>${t('sched.ahead')}</span><span>${ahead.length ? t('sched.count', { n: ahead.length }) : t('sched.none')}</span>`));
   ahead.slice(0, 5).forEach(x => inner.appendChild(subRow(e, x)));
   if (ahead.length > 5) {
-    inner.appendChild(el('div', 'subrow', `<span class="tm"></span><span class="grow"><span class="mm">+${ahead.length - 5}건 더</span></span>`));
+    inner.appendChild(el('div', 'subrow', `<span class="tm"></span><span class="grow"><span class="mm">${t('sched.aheadMore', { n: ahead.length - 5 })}</span></span>`));
   }
-  const addSub = el('button', 'panel-btn', `${ic('plus', 15, 2.4)}약속 추가`);
+  const addSub = el('button', 'panel-btn', `${ic('plus', 15, 2.4)}${t('sched.subAdd')}`);
   addSub.onclick = () => subSheet(e, null, null);
   inner.appendChild(addSub);
 
-  const ckBtn = el('button', 'panel-btn', `${ic('check', 15, 2.4)}체크리스트`
-    + `<span class="rt">${pg.total ? `${pg.done}/${pg.total}` : '설정'}</span>${ic('chev', 15, 2.2)}`);
+  const ckBtn = el('button', 'panel-btn', `${ic('check', 15, 2.4)}${t('sched.checklist')}`
+    + `<span class="rt">${pg.total ? `${pg.done}/${pg.total}` : t('sched.setup')}</span>${ic('chev', 15, 2.2)}`);
   ckBtn.onclick = () => openChecklist(e.id);
   inner.appendChild(ckBtn);
 
@@ -311,7 +312,9 @@ export function renderSchedule() {
 
 function paintSchedule(sc) {
   sc.innerHTML = '';
-  const all = [...S.cat.events];
+  /* "행사 미상" 은 일정이 아니다 — 사진을 모아 두는 자리라 날짜가 없다.
+     걸러 내지 않으면 날짜 미정 목록에 계속 끼어 있는다. */
+  const all = [...S.cat.events].filter(e => !e.unknown);
   const match = e => !catFilter || (e.tags || []).includes(catFilter);
 
   const up = all.filter(e => e.date && !isDone(e)).sort((a, b) => a.date.localeCompare(b.date));
@@ -328,11 +331,11 @@ function paintSchedule(sc) {
     const upF = up.filter(match);
     const s = el('div', 'sec');
     const lb = el('div', 'sec-lb');
-    lb.innerHTML = `<h2>다가오는 일정</h2>`;
+    lb.innerHTML = `<h2>${t('sched.upcoming')}</h2>`;
     const pick = el('button', 'catpick' + (catFilter ? ' on' : ''),
       catFilter
         ? `<span class="cat c-${catColor(catFilter)} sm">${esc(catFilter)}</span>${ic('x', 13, 2.6)}`
-        : `카테고리${ic('chev', 13, 2.4)}`);
+        : `${t('sched.category')}${ic('chev', 13, 2.4)}`);
     pick.onclick = () => {
       if (catFilter) { catFilter = null; renderSchedule(); return; }
       catPickSheet(v => { catFilter = v; renderSchedule(); });
@@ -341,7 +344,7 @@ function paintSchedule(sc) {
     s.appendChild(lb);
 
     if (!upF.length) {
-      s.appendChild(el('div', 'note', `${ic('info', 17)}<span>이 카테고리에 해당하는 다가오는 일정이 없어요.</span>`));
+      s.appendChild(el('div', 'note', `${ic('info', 17)}<span>${t('sched.noneInCat')}</span>`));
     } else {
       const box = el('div', 'stagger');
       upF.forEach(e => box.appendChild(eventBlock(e, true)));
@@ -362,12 +365,12 @@ function paintSchedule(sc) {
     sc.appendChild(s);
     th.warm(box.querySelectorAll('img[data-fid]'), 4);
   };
-  section('날짜 미정', undated);
-  section('지난 일정', past);
+  section(t('sched.noDate'), undated);
+  section(t('sched.past'), past);
 
   const add = el('div', 'sec');
   add.style.marginTop = '18px';
-  const b = el('button', 'btn', `${ic('plus', 19, 2.2)}일정 추가`);
+  const b = el('button', 'btn', `${ic('plus', 19, 2.2)}${t('sched.evAdd')}`);
   b.onclick = () => eventSheet(null);
   add.appendChild(b);
   sc.appendChild(add);
@@ -375,7 +378,7 @@ function paintSchedule(sc) {
   if (!all.length) {
     const n = el('div', 'sec');
     n.style.marginTop = '16px';
-    n.appendChild(el('div', 'note', `${ic('info', 17)}<span>일정은 사진의 <b>행사</b>와 같은 목록입니다. 여기서 만든 일정이 사진 분류에도 바로 쓰여요.</span>`));
+    n.appendChild(el('div', 'note', `${ic('info', 17)}<span>${t('sched.evNote')}</span>`));
     sc.appendChild(n);
   }
   wireScroll();
@@ -383,17 +386,17 @@ function paintSchedule(sc) {
 
 function catPickSheet(apply) {
   const pool = S.cat.eventTags;
-  openSheet(`<h3>카테고리로 보기</h3><p class="lead">다가오는 일정만 골라 봅니다.</p><div class="opts" id="cp"></div>`
-    + `<button class="btn sub" id="cp-all" style="width:100%">전체 보기</button>`);
+  openSheet(`<h3>${t('sched.byCategory')}</h3><p class="lead">${t('sched.byCategoryLead')}</p><div class="opts" id="cp"></div>`
+    + `<button class="btn sub" id="cp-all" style="width:100%">${t('sched.showAll')}</button>`);
   const box = $('#cp');
-  pool.forEach(t => {
-    const n = S.cat.events.filter(e => (e.tags || []).includes(t.name) && e.date && !isDone(e)).length;
-    const o = el('button', 'opt', `<span class="l"><span class="cat c-${t.color}" style="pointer-events:none">${esc(t.name)}</span></span>`
-      + `<span class="n">${n}건</span><span class="c">${ic('chev', 17, 2.2)}</span>`);
-    o.onclick = () => { apply(t.name); closeSheet(); };
+  pool.forEach(tag => {
+    const n = S.cat.events.filter(e => (e.tags || []).includes(tag.name) && e.date && !isDone(e)).length;
+    const o = el('button', 'opt', `<span class="l"><span class="cat c-${tag.color}" style="pointer-events:none">${esc(tag.name)}</span></span>`
+      + `<span class="n">${t('sched.count', { n })}</span><span class="c">${ic('chev', 17, 2.2)}</span>`);
+    o.onclick = () => { apply(tag.name); closeSheet(); };
     box.appendChild(o);
   });
-  if (!pool.length) box.innerHTML = `<div class="note">${ic('info', 17)}<span>아직 카테고리가 없어요. 일정 안에서 만들 수 있습니다.</span></div>`;
+  if (!pool.length) box.innerHTML = `<div class="note">${ic('info', 17)}<span>${t('sched.noCat')}</span></div>`;
   $('#cp-all').onclick = () => { apply(null); closeSheet(); };
 }
 
@@ -416,11 +419,11 @@ function eventBlock(e, upcoming) {
       ? `<img class="evlogo" data-fid="${list[0].id}" alt="">`
       : `<span class="evlogo none">${esc((e.name || '?').trim()[0] || '?')}</span>`;
 
-  const meta = [fmtRange(e), e.place, list.length ? `사진 ${fmt(list.length)}장` : null]
+  const meta = [fmtRange(e), e.place, list.length ? `${t('sched.photoCount', { n: fmt(list.length) })}` : null]
     .filter(Boolean).join(' · ');
-  const chips = (e.going === false ? `<span class="cat c-gray sm">미정</span>` : '')
-    + (e.tags || []).map(t => `<span class="cat c-${catColor(t)} sm">${esc(t)}</span>`).join('')
-    + (sl.length ? `<span class="cat c-gray sm">약속 ${sl.length}</span>` : '');
+  const chips = (e.going === false ? `<span class="cat c-gray sm">${t('sched.tbd')}</span>` : '')
+    + (e.tags || []).map(tag => `<span class="cat c-${catColor(tag)} sm">${esc(tag)}</span>`).join('')
+    + (sl.length ? `<span class="cat c-gray sm">${t('sched.subBadge', { n: sl.length })}</span>` : '');
 
   const body = el('button', 'ev-main');
   body.innerHTML = lead
@@ -435,7 +438,7 @@ function eventBlock(e, upcoming) {
 
   if (sl.length) {
     const exp = el('button', 'exp');
-    exp.setAttribute('aria-label', '약속 펼치기');
+    exp.setAttribute('aria-label', t('sched.openSub'));
     exp.innerHTML = ic('chev', 18, 2.4);
     r.appendChild(exp);
 
@@ -452,12 +455,12 @@ function eventBlock(e, upcoming) {
 /* ---------- 일정 상세 ---------- */
 
 export function openEvent(id) {
-  push('일정', sc => paintEvent(sc, id));
+  push(t('tab.schedule'), sc => paintEvent(sc, id));
 }
 
 function paintEvent(sc, id) {
   const e = S.cat.events.find(x => x.id === id);
-  if (!e) { sc.innerHTML = `<div class="sec" style="padding-top:40px"><div class="note bad">삭제된 일정입니다.</div></div>`; return; }
+  if (!e) { sc.innerHTML = `<div class="sec" style="padding-top:40px"><div class="note bad">${t('sched.deleted')}</div></div>`; return; }
   keepScroll(sc, () => paint(sc, e, id));
 }
 
@@ -467,12 +470,12 @@ function paint(sc, e, id) {
   const live = d.ph.state === 'during';
   const n = photos().filter(p => p.event === e.id).length;
 
-  const t = el('div', 'gtitle');
-  t.innerHTML = (e.logo ? `<img class="evlogo big" alt="" src="${e.logo}" style="margin-bottom:12px">` : '')
+  const hd = el('div', 'gtitle');
+  hd.innerHTML = (e.logo ? `<img class="evlogo big" alt="" src="${e.logo}" style="margin-bottom:12px">` : '')
     + `<h2>${esc(e.name)}</h2>`
     + `<div class="m">${esc([fmtRange(e), e.place].filter(Boolean).join(' · '))}</div>`
     + `<div class="x">${live ? '<i class="live-dot"></i>' : ''}${d.big}${d.sub ? ` · ${d.sub}` : ''}</div>`;
-  sc.appendChild(t);
+  sc.appendChild(hd);
 
   /* 참가 확정 — 갈까 말까 하는 행사를 등록만 해두고 나중에 확정한다 */
   const g = el('div', 'sec');
@@ -482,27 +485,27 @@ function paint(sc, e, id) {
     `<span class="row-ico" style="${e.going === false
       ? 'background:var(--fill);color:var(--g500)'
       : 'background:var(--green-fill);color:var(--green)'}">${ic('check', 18, 2.4)}</span>`
-    + `<span class="grow"><span class="t">${e.going === false ? '참가 미정' : '참가 확정'}</span>`
+    + `<span class="grow"><span class="t">${t(e.going === false ? 'sched.goingNo' : 'sched.goingYes')}</span>`
     + `<span class="d">${e.going === false
-      ? '홈 디데이는 확정된 행사부터 보여줍니다'
-      : '홈 화면에 디데이로 올라갑니다'}</span></span>`);
+      ? t('sched.goingNoDesc')
+      : t('sched.goingYesDesc')}</span></span>`);
   const sw = el('button', 'sw' + (e.going !== false ? ' on' : ''), '<i></i>');
   sw.setAttribute('aria-pressed', String(e.going !== false));
   sw.onclick = () => {
     // 제자리에서 뒤집고, 이 행의 문구만 갈아 준다
     e.going = flipSwitch(sw, e.going === false);
-    const t = grow.querySelector('.t');
+    const tn = grow.querySelector('.t');
     const d = grow.querySelector('.d');
     const ico = grow.parentElement.querySelector('.row-ico');
-    if (t) t.textContent = e.going ? '참가 확정' : '참가 미정';
-    if (d) d.textContent = e.going ? '홈 화면에 디데이로 올라갑니다' : '홈 디데이는 확정된 행사부터 보여줍니다';
+    if (tn) tn.textContent = e.going ? t('sched.goingYes') : t('sched.goingNo');
+    if (d) d.textContent = e.going ? t('sched.goingYesDesc') : t('sched.goingNoDesc');
     if (ico) ico.style.cssText = e.going
       ? 'background:var(--green-fill);color:var(--green)'
       : 'background:var(--fill);color:var(--g500)';
     touch();
     renderHome();
     renderSchedule();
-    toast(e.going ? '참가 확정으로 바꿌어요' : '참가 미정으로 바꿌어요');
+    toast(e.going ? t('sched.toGoingYes') : t('sched.toGoingNo'));
   };
   grow.appendChild(sw);
   gbox.appendChild(grow);
@@ -519,7 +522,7 @@ function paint(sc, e, id) {
   /* 행사 안의 약속 */
   const sl = subs(e);
   const ss = el('div', 'sec');
-  ss.appendChild(el('div', 'sec-lb', `<h2>행사 안의 약속</h2><span class="n">${sl.length}건</span>`));
+  ss.appendChild(el('div', 'sec-lb', `<h2>${t('sched.subsInEvent')}</h2><span class="n">${t('sched.count', { n: sl.length })}</span>`));
   const sbox = el('div', 'card');
   if (sl.length) {
     if (dayCount(e) > 1) {
@@ -530,17 +533,17 @@ function paint(sc, e, id) {
         byDay.get(k).push(x);
       });
       [...byDay.keys()].sort().forEach(k => {
-        sbox.appendChild(el('div', 'daylb', `${diff(k, e.date) + 1}일차 · ${fmtDate(k).slice(5)}`));
+        sbox.appendChild(el('div', 'daylb', `${t('sched.dayN', { n: diff(k, e.date) + 1 })} · ${fmtDate(k).slice(5)}`));
         byDay.get(k).forEach(x => sbox.appendChild(subRow(e, x, () => paint(sc, e, id))));
       });
     } else {
       sl.forEach(x => sbox.appendChild(subRow(e, x, () => paint(sc, e, id))));
     }
   } else {
-    sbox.appendChild(el('div', 'subrow', `<span class="tm"></span><span class="grow"><span class="mm">아직 없어요. 아래에서 추가하세요.</span></span>`));
+    sbox.appendChild(el('div', 'subrow', `<span class="tm"></span><span class="grow"><span class="mm">${t('sched.subNone')}</span></span>`));
   }
   ss.appendChild(sbox);
-  const addSub = el('button', 'btn sub', `${ic('plus', 17, 2.2)}약속 추가`);
+  const addSub = el('button', 'btn sub', `${ic('plus', 17, 2.2)}${t('sched.subAdd')}`);
   addSub.style.cssText = 'width:100%;margin-top:12px';
   addSub.onclick = () => subSheet(e, null, () => paint(sc, e, id));
   ss.appendChild(addSub);
@@ -550,25 +553,25 @@ function paint(sc, e, id) {
   const pg = progress(e);
   const s1 = el('div', 'sec');
   s1.style.marginTop = '24px';
-  const strip = el('button', 'strip blue', `<span class="k">체크리스트</span>`
-    + `<span class="v">${pg.total ? `${pg.done}/${pg.total}` : '설정'}</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
+  const strip = el('button', 'strip blue', `<span class="k">${t('sched.checklist')}</span>`
+    + `<span class="v">${pg.total ? `${pg.done}/${pg.total}` : t('sched.setup')}</span><span class="chev">${ic('chev', 17, 2.2)}</span>`);
   strip.onclick = () => openChecklist(e.id);
   s1.appendChild(strip);
   sc.appendChild(s1);
 
   /* 행사 카테고리 */
   const ts = el('div', 'sec');
-  ts.appendChild(el('div', 'sec-lb', `<h2>행사 카테고리</h2><span class="n">사진 태그와 별개</span>`));
+  ts.appendChild(el('div', 'sec-lb', `<h2>${t('sched.evCats')}</h2><span class="n">${t('sched.evCatsSub')}</span>`));
   const tw = el('div', 'tagwrap');
   (e.tags || []).forEach(tag => {
     const c = el('button', `cat c-${catColor(tag)}`, `${esc(tag)}<span class="x">${ic('x', 13, 2.6)}</span>`);
     c.onclick = () => { e.tags = e.tags.filter(x => x !== tag); touch(); paint(sc, e, id); renderSchedule(); };
     tw.appendChild(c);
   });
-  const addT = el('button', 'tg add', `${ic('check', 14, 2.4)}고르기`);
+  const addT = el('button', 'tg add', `${ic('check', 14, 2.4)}${t('sched.pickCat')}`);
   addT.onclick = () => eventCatSheet(e, () => paint(sc, e, id));
   tw.appendChild(addT);
-  const mkT = el('button', 'tg add', `${ic('plus', 14, 2.4)}카테고리 만들기`);
+  const mkT = el('button', 'tg add', `${ic('plus', 14, 2.4)}${t('sched.makeCat')}`);
   mkT.onclick = () => catSheet(null, name => {
     if (name) { e.tags = [...new Set([...(e.tags || []), name])]; touch(); }
     paint(sc, e, id);
@@ -585,15 +588,15 @@ function paint(sc, e, id) {
       .filter(x => x.sh).sort((a, b) => b.cnt - a.cnt);
 
     const ss2 = el('div', 'sec');
-    ss2.appendChild(el('div', 'sec-lb', `<h2>사진사</h2><span class="n">${crew.length}명</span>`));
+    ss2.appendChild(el('div', 'sec-lb', `<h2>${t('sched.shooters')}</h2><span class="n">${t('sched.shooterCount', { n: crew.length })}</span>`));
     const sbox2 = el('div', 'card');
 
     crew.forEach(({ sh, cnt }) => {
       const r = el('button', 'row');
       r.innerHTML = avatarHTML(sh.name, sh.avatar)
         + `<span class="grow"><span class="t">${esc(sh.name)}</span>`
-        + `<span class="d${sh.x ? ' x' : ''}">${sh.x ? '@' + esc(sh.x) : 'X 아이디 없음'}</span></span>`
-        + `<span class="n-sm">${fmt(cnt)}장</span><span class="chev">${ic('chev', 18, 2.1)}</span>`;
+        + `<span class="d${sh.x ? ' x' : ''}">${sh.x ? '@' + esc(sh.x) : t('common.noXId')}</span></span>`
+        + `<span class="n-sm">${t('common.photoN', { n: fmt(cnt) })}</span><span class="chev">${ic('chev', 18, 2.1)}</span>`;
       r.onclick = () => {
         V.filter = { ...NO_FILTER(), event: e.id, shooter: sh.id };
         V.limit = 90;
@@ -608,19 +611,30 @@ function paint(sc, e, id) {
        이게 홈의 "확인할 것" 카메라→사진사 제안이 학습할 씨앗도 된다. */
     const byCam = new Map();
     list.filter(p => !p.shooter).forEach(p => {
-      const k = p.cameraModel || '카메라 정보 없음';
+      const k = p.cameraModel || t('sched.noCamera');
       if (!byCam.has(k)) byCam.set(k, []);
       byCam.get(k).push(p.id);
     });
     [...byCam.entries()].sort((a, b) => b[1].length - a[1].length).forEach(([cam, ids]) => {
       const r = el('button', 'row');
       r.innerHTML = `<span class="row-ico" style="background:var(--amber-fill);color:var(--amber)">${ic('cam', 18)}</span>`
-        + `<span class="grow"><span class="t" style="color:var(--amber)">사진사 지정하기</span>`
+        + `<span class="grow"><span class="t" style="color:var(--amber)">${t('sched.assignShooter')}</span>`
         + `<span class="d">${esc(cam)}</span></span>`
-        + `<span class="n-sm">${fmt(ids.length)}장</span><span class="chev">${ic('chev', 18, 2.1)}</span>`;
+        + `<span class="n-sm">${t('common.photoN', { n: fmt(ids.length) })}</span><span class="chev">${ic('chev', 18, 2.1)}</span>`;
+      /* 바로 할당 화면을 띄우지 않는다 — 같은 카메라라도 남의 것을 잠깐
+         쓴 컷이 섞인다. 먼저 어떤 사진인지 보여주고 아닌 것을 빼게 한 뒤,
+         남은 것에만 사진사를 고른다. 사진을 보고 나서야 누가 찍었는지
+         판단이 되는 경우가 대부분이다. */
       r.onclick = () => {
-        V.sel = new Set(ids);
-        assignSheet('shooter', () => { paint(sc, e, id); renderAll(); });
+        reviewSheet({
+          title: esc(cam),
+          ids,
+          okKey: 'sug.reviewPick',
+          onApply: keep => {
+            V.sel = new Set(keep);
+            assignSheet('shooter', () => { paint(sc, e, id); renderAll(); });
+          },
+        });
       };
       sbox2.appendChild(r);
     });
@@ -631,11 +645,11 @@ function paint(sc, e, id) {
 
   /* 사진 */
   const ps = el('div', 'sec');
-  ps.appendChild(el('div', 'sec-lb', `<h2>이 행사 사진</h2><span class="n">${fmt(n)}장</span>`));
+  ps.appendChild(el('div', 'sec-lb', `<h2>${t('sched.thisEventPhotos')}</h2><span class="n">${t('common.photoN', { n: fmt(n) })}</span>`));
   const pb = el('div', 'card');
   const pr = el('button', 'row', `<span class="row-ico">${ic('grid', 18)}</span>`
-    + `<span class="grow"><span class="t">${n ? '사진 보기' : '아직 연결된 사진이 없어요'}</span>`
-    + `<span class="d">${n ? '사진 탭에서 이 행사로 필터' : '사진 탭에서 이 행사로 지정하면 모입니다'}</span></span>`
+    + `<span class="grow"><span class="t">${t(n ? 'sched.viewPhotos' : 'sched.noPhotos')}</span>`
+    + `<span class="d">${t(n ? 'sched.filterInPhotos' : 'sched.assignHint')}</span></span>`
     + `<span class="chev">${ic('chev', 18, 2.1)}</span>`);
   pr.onclick = () => {
     V.filter = { ...NO_FILTER(), event: e.id };
@@ -650,25 +664,26 @@ function paint(sc, e, id) {
   /* 로고 · 편집 · 삭제 */
   const act = el('div', 'sec');
   act.style.cssText = 'margin-top:20px;display:flex;flex-direction:column;gap:8px';
-  const lg = el('button', 'btn sub', `${ic('grid', 17, 2)}로고 ${e.logo ? '바꾸기' : '설정'}`);
+  const lg = el('button', 'btn sub', `${ic('grid', 17, 2)}${t('sched.logo', { act: t(e.logo ? 'sched.change' : 'sched.setup') })}`);
   lg.style.width = '100%';
   lg.onclick = () => logoSheet(e, () => paint(sc, e, id));
-  const ed = el('button', 'btn sub', `${ic('cal', 17, 2)}일정 편집`);
+  const ed = el('button', 'btn sub', `${ic('cal', 17, 2)}${t('sched.evEdit')}`);
   ed.style.width = '100%';
   ed.onclick = () => eventSheet(e, () => paint(sc, e, id));
-  const del = el('button', 'btn danger', `${ic('trash', 17, 2)}일정 삭제`);
+  const del = el('button', 'btn danger', `${ic('trash', 17, 2)}${t('sched.evDelete')}`);
   del.onclick = () => confirmSheet({
-    title: '이 일정을 삭제할까요?', danger: true, ok: '삭제',
+    title: t('sched.evDeleteQ'), danger: true, ok: t('common.delete'),
     lead: n
-      ? `이 행사로 분류된 <b>사진 ${fmt(n)}장</b>이 <b>행사 미지정</b>으로 돌아갑니다. 사진과 사용 이력은 지워지지 않습니다.`
-      : '체크리스트 · 약속 · 카테고리도 함께 사라집니다.',
+      ? `${t('sched.evDeleteLeadN', { n: fmt(n) })}`
+      : t('sched.evDeleteLead'),
     onOk: () => {
       S.cat.events = S.cat.events.filter(x => x.id !== id);
       Object.values(S.cat.photos).forEach(p => { if (p.event === id) p.event = null; });
-      touch();
+      markDeleted('events', id);
+      touchNow();          // 삭제는 미루지 않는다 — 지연 저장이 끊기면 되살아난다
       popAll();
       renderAll();
-      toast('일정을 삭제했어요');
+      toast(t('sched.evDeleted'));
     },
   });
   act.appendChild(lg);
@@ -685,28 +700,28 @@ export function eventSheet(e, after) {
   let going = e ? e.going !== false : true;
 
   const render = () => {
-    openSheet(`<h3>${isNew ? '일정 추가' : '일정 편집'}</h3>`
-      + `<p class="lead">${isNew ? '날짜를 넣으면 디데이로 세어주고, 같은 날짜의 사진을 이 행사로 제안합니다.' : ''}</p>`
-      + `<div class="fld"><label for="ev-name">행사 이름</label>`
-      + `<input id="ev-name" maxlength="60" value="${esc(e ? e.name : '')}" placeholder="예: 케이퍼리 2026"></div>`
-      + `<div class="fld"><label>기간</label><div id="ev-seg"></div></div>`
-      + `<div class="fld"><label for="ev-date">${multi ? '시작일' : '날짜'}</label>`
+    openSheet(`<h3>${t(isNew ? 'sched.evAdd' : 'sched.evEdit')}</h3>`
+      + `<p class="lead">${isNew ? t('sched.evLead') : ''}</p>`
+      + `<div class="fld"><label for="ev-name">${t('sched.evName')}</label>`
+      + `<input id="ev-name" maxlength="60" value="${esc(e ? e.name : '')}" placeholder="${t('sched.evNamePh')}"></div>`
+      + `<div class="fld"><label>${t('sched.period')}</label><div id="ev-seg"></div></div>`
+      + `<div class="fld"><label for="ev-date">${t(multi ? 'sched.startDate' : 'sched.date')}</label>`
       + `<input id="ev-date" type="date" value="${e && e.date ? e.date : ''}"></div>`
       + (multi
-        ? `<div class="fld"><label for="ev-end">종료일</label>`
+        ? `<div class="fld"><label for="ev-end">${t('sched.endDate')}</label>`
           + `<input id="ev-end" type="date" value="${e && e.endDate ? e.endDate : ''}">`
-          + `<div class="hint">여러 날 묶는 컨벤션이면 종료일까지 넣어 주세요. 그 안의 약속은 <b>행사 안의 약속</b>으로 따로 적습니다.</div></div>`
+          + `<div class="hint">${t('sched.endHint')}</div></div>`
         : '')
-      + `<div class="fld"><label for="ev-place">장소 (선택)</label>`
-      + `<input id="ev-place" maxlength="40" value="${esc(e && e.place ? e.place : '')}" placeholder="예: 킨텍스 제2전시장"></div>`
-      + `<div class="fld"><label for="ev-note">메모 (선택)</label>`
-      + `<input id="ev-note" maxlength="80" value="${esc(e && e.note ? e.note : '')}" placeholder="예: 입장 10시 · 단체샷 14시"></div>`
-      + `<div class="fld"><label>참가</label><div id="ev-go"></div>`
-      + `<div class="hint">갈까 말까 정하지 못했으면 <b>미정</b>으로 등록해 두세요. 홈 디데이는 확정된 행사부터 잡습니다.</div></div>`
-      + `<button class="btn" id="ev-save">${isNew ? '추가' : '저장'}</button>`);
+      + `<div class="fld"><label for="ev-place">${t('sched.placeOpt')}</label>`
+      + `<input id="ev-place" maxlength="40" value="${esc(e && e.place ? e.place : '')}" placeholder="${t('sched.placePh')}"></div>`
+      + `<div class="fld"><label for="ev-note">${t('sched.noteOpt')}</label>`
+      + `<input id="ev-note" maxlength="80" value="${esc(e && e.note ? e.note : '')}" placeholder="${t('sched.notePh2')}"></div>`
+      + `<div class="fld"><label>${t('sched.going')}</label><div id="ev-go"></div>`
+      + `<div class="hint">${t('sched.goingHint')}</div></div>`
+      + `<button class="btn" id="ev-save">${t(isNew ? 'common.add' : 'common.save')}</button>`);
 
     /* 기간 전환 시 입력값을 잃지 않도록 옮겨 담는다 */
-    $('#ev-seg').appendChild(segment([['one', '하루'], ['many', '여러 날']], multi ? 'many' : 'one', v => {
+    $('#ev-seg').appendChild(segment([['one', t('sched.oneDay')], ['many', t('sched.multiDay')]], multi ? 'many' : 'one', v => {
       const keep = {
         name: $('#ev-name').value, date: $('#ev-date').value,
         end: $('#ev-end') ? $('#ev-end').value : '',
@@ -722,7 +737,7 @@ export function eventSheet(e, after) {
     }));
     $('#ev-seg .segwrap').style.padding = '0';
 
-    const goSeg = segment([['yes', '확정'], ['maybe', '미정']], going ? 'yes' : 'maybe', v => {
+    const goSeg = segment([['yes', t('sched.confirmed')], ['maybe', t('sched.tbd')]], going ? 'yes' : 'maybe', v => {
       going = v === 'yes';
       const seg = goSeg.querySelector('.seg');
       seg.style.setProperty('--i', going ? '0' : '1');
@@ -755,7 +770,7 @@ export function eventSheet(e, after) {
       }
       touch();
       closeSheet();
-      toast(isNew ? `"${name}" 일정을 추가했어요` : '저장했어요');
+      toast(isNew ? t('sched.evAdded', { name }) : t('common.saved'));
       if (after) after();
       renderAll();
     };
@@ -768,9 +783,9 @@ export function eventSheet(e, after) {
 
 function eventCatSheet(e, after) {
   const pool = S.cat.eventTags;
-  openSheet(`<h3>행사 카테고리</h3><p class="lead">사진 태그와는 별개 목록입니다.</p>`
+  openSheet(`<h3>${t('sched.evCats')}</h3><p class="lead">${t('sched.evCatsLead')}</p>`
     + `<div class="opts" id="et-list"></div>`
-    + `<button class="btn sub" id="et-new" style="width:100%">${ic('plus', 17, 2.2)}카테고리 만들기</button>`);
+    + `<button class="btn sub" id="et-new" style="width:100%">${ic('plus', 17, 2.2)}${t('sched.makeCat')}</button>`);
   const box = $('#et-list');
   const paintList = () => {
     box.innerHTML = '';
@@ -785,7 +800,7 @@ function eventCatSheet(e, after) {
       };
       box.appendChild(o);
     });
-    if (!pool.length) box.innerHTML = `<div class="note">${ic('info', 17)}<span>아래에서 카테고리를 만들어 주세요.</span></div>`;
+    if (!pool.length) box.innerHTML = `<div class="note">${ic('info', 17)}<span>${t('sched.makeCatFirst')}</span></div>`;
   };
   paintList();
   $('#et-new').onclick = () => catSheet(null, name => {
@@ -798,23 +813,23 @@ function eventCatSheet(e, after) {
 /* ---------- 체크리스트 ---------- */
 
 export function openChecklist(id) {
-  push('체크리스트', sc => paintChecklist(sc, id));
+  push(t('sched.checklist'), sc => paintChecklist(sc, id));
 }
 
 function paintChecklist(sc, id) {
   const e = S.cat.events.find(x => x.id === id);
-  if (!e) { sc.innerHTML = `<div class="sec" style="padding-top:40px"><div class="note bad">삭제된 일정입니다.</div></div>`; return; }
+  if (!e) { sc.innerHTML = `<div class="sec" style="padding-top:40px"><div class="note bad">${t('sched.deleted')}</div></div>`; return; }
   keepScroll(sc, () => {
     sc.innerHTML = '';
     const d = ddayLabel(e);
-    const t = el('div', 'gtitle');
-    t.innerHTML = `<h2>${esc(e.name)}</h2><div class="m">${esc([fmtRange(e), d.sub].filter(Boolean).join(' · '))}</div>`;
-    sc.appendChild(t);
+    const hd = el('div', 'gtitle');
+    hd.innerHTML = `<h2>${esc(e.name)}</h2><div class="m">${esc([fmtRange(e), d.sub].filter(Boolean).join(' · '))}</div>`;
+    sc.appendChild(hd);
 
     /* 사전 준비 */
     const prep = e.prep || (e.prep = []);
     const s1 = el('div', 'sec');
-    s1.appendChild(ckHead('사전 준비', prepDone(e), prep.length));
+    s1.appendChild(ckHead(t('sched.prep'), prepDone(e), prep.length));
     const b1 = el('div', 'card');
     prep.forEach(item => {
       const r = el('button', 'ck-row' + (item.done ? ' on' : ''), `<span class="ck-box">${ic('check', 14, 3)}</span><span class="tx">${esc(item.text)}</span>`);
@@ -828,11 +843,11 @@ function paintChecklist(sc, id) {
       r.onclick = () => { item.done = !item.done; touch(); paintChecklist(sc, id); renderAll(); };
       b1.appendChild(r);
     });
-    if (!prep.length) b1.appendChild(el('div', 'ck-row', `<span class="tx" style="color:var(--g500);font-weight:600">아직 없어요. 아래에서 추가하세요.</span>`));
+    if (!prep.length) b1.appendChild(el('div', 'ck-row', `<span class="tx" style="color:var(--g500);font-weight:600">${t('sched.subNone')}</span>`));
     s1.appendChild(b1);
     const ar = el('div', 'addrow');
     ar.style.marginTop = '10px';
-    ar.innerHTML = `<input id="pp-in" placeholder="할 일 추가" maxlength="40"><button id="pp-add">추가</button>`;
+    ar.innerHTML = `<input id="pp-in" placeholder="${t('sched.todoPh')}" maxlength="40"><button id="pp-add">${t('common.add')}</button>`;
     s1.appendChild(ar);
     sc.appendChild(s1);
     const addPrep = () => {
@@ -849,7 +864,7 @@ function paintChecklist(sc, id) {
     const packing = S.cat.packing;
     const packed = e.packed || (e.packed = []);
     const s2 = el('div', 'sec');
-    s2.appendChild(ckHead('짐 챙기기', packDone(e), packing.length));
+    s2.appendChild(ckHead(t('sched.packing'), packDone(e), packing.length));
     const b2 = el('div', 'card');
     packing.forEach(item => {
       const on = packed.includes(item.id);
@@ -860,9 +875,9 @@ function paintChecklist(sc, id) {
       };
       b2.appendChild(r);
     });
-    if (!packing.length) b2.appendChild(el('div', 'ck-row', `<span class="tx" style="color:var(--g500);font-weight:600">공용 목록이 비어 있어요.</span>`));
+    if (!packing.length) b2.appendChild(el('div', 'ck-row', `<span class="tx" style="color:var(--g500);font-weight:600">${t('sched.sharedEmpty')}</span>`));
     s2.appendChild(b2);
-    const go = el('button', 'btn sub', `${ic('sliders', 17, 2)}공용 목록 편집`);
+    const go = el('button', 'btn sub', `${ic('sliders', 17, 2)}${t('sched.editShared')}`);
     go.style.cssText = 'width:100%;margin-top:12px';
     go.onclick = () => openPacking();
     s2.appendChild(go);
@@ -870,15 +885,15 @@ function paintChecklist(sc, id) {
 
     const reset = el('div', 'sec');
     reset.style.marginTop = '18px';
-    const rb = el('button', 'btn sub', `${ic('refresh', 17, 2)}이 행사 체크 모두 지우기`);
+    const rb = el('button', 'btn sub', `${ic('refresh', 17, 2)}${t('sched.clearThisEvent')}`);
     rb.style.width = '100%';
     rb.onclick = () => confirmSheet({
-      title: '체크를 모두 지울까요?', ok: '모두 지우기', danger: true,
-      lead: '항목은 남고 체크만 풀립니다. 다음 행사에 다시 쓸 때 편합니다.',
+      title: t('sched.clearChecksQ'), ok: t('sched.clearAll'), danger: true,
+      lead: t('sched.clearChecksLead'),
       onOk: () => {
         e.packed = [];
         (e.prep || []).forEach(x => { x.done = false; });
-        touch(); paintChecklist(sc, id); renderAll(); toast('체크를 지웠어요');
+        touch(); paintChecklist(sc, id); renderAll(); toast(t('sched.checksCleared'));
       },
     });
     reset.appendChild(rb);
@@ -896,21 +911,21 @@ function ckHead(label, done, total) {
 /* ---------- 짐 챙기기 공용 목록 ---------- */
 
 export function openPacking() {
-  push('짐 챙기기 목록', sc => paintPacking(sc));
+  push(t('sched.packingList'), sc => paintPacking(sc));
 }
 
 function paintPacking(sc) {
   keepScroll(sc, () => {
     sc.innerHTML = '';
     const list = S.cat.packing;
-    const t = el('div', 'gtitle');
-    t.innerHTML = `<h2>짐 챙기기 목록</h2><div class="m">모든 행사가 함께 쓰는 공용 목록입니다. 체크 상태는 행사별로 따로 남으니, 여기서는 항목만 관리하세요.</div>`;
-    sc.appendChild(t);
+    const hd = el('div', 'gtitle');
+    hd.innerHTML = `<h2>${t('sched.packingList')}</h2><div class="m">${t('sched.packingLead')}</div>`;
+    sc.appendChild(hd);
 
     const s = el('div', 'sec');
     s.style.marginTop = '18px';
     const ar = el('div', 'addrow');
-    ar.innerHTML = `<input id="pk-in" placeholder="챙길 것 추가" maxlength="40"><button id="pk-add">추가</button>`;
+    ar.innerHTML = `<input id="pk-in" placeholder="${t('sched.packPh')}" maxlength="40"><button id="pk-add">${t('common.add')}</button>`;
     s.appendChild(ar);
 
     const box = el('div', 'card');
@@ -930,12 +945,14 @@ function paintPacking(sc) {
       del.onclick = () => {
         const used = S.cat.events.filter(e => (e.packed || []).includes(item.id)).length;
         confirmSheet({
-          title: `"${item.text}" 를 지울까요?`, danger: true, ok: '삭제',
-          lead: used ? `이미 체크해 둔 행사 <b>${used}건</b>에서도 함께 빠집니다.` : '공용 목록에서 사라집니다.',
+          title: t('sched.delItemQ', { name: item.text }), danger: true, ok: t('common.delete'),
+          lead: used ? t('sched.delItemUsed', { n: used }) : t('sched.packingGone'),
           onOk: () => {
             S.cat.packing = list.filter(x => x.id !== item.id);
             S.cat.events.forEach(e => { if (e.packed) e.packed = e.packed.filter(x => x !== item.id); });
-            touch(); paintPacking(sc); renderAll();
+            markDeleted('packing', item.id);
+            touchNow();
+            paintPacking(sc); renderAll();
           },
         });
       };
@@ -943,14 +960,14 @@ function paintPacking(sc) {
       r.appendChild(del);
       box.appendChild(r);
     });
-    if (!list.length) box.appendChild(el('div', 'ck-row', `<span class="tx" style="color:var(--g500);font-weight:600">항목이 없어요.</span>`));
+    if (!list.length) box.appendChild(el('div', 'ck-row', `<span class="tx" style="color:var(--g500);font-weight:600">${t('sched.noItems')}</span>`));
     s.appendChild(box);
     sc.appendChild(s);
 
     const add = () => {
       const v = ar.querySelector('#pk-in').value.trim();
       if (!v) return;
-      if (list.some(x => x.text === v)) { toast('이미 있는 항목이에요'); return; }
+      if (list.some(x => x.text === v)) { toast(t('sched.dupItem')); return; }
       list.push({ id: uid('pk'), text: v });
       touch();
       paintPacking(sc);
@@ -960,7 +977,7 @@ function paintPacking(sc) {
 
     const n = el('div', 'sec');
     n.style.marginTop = '20px';
-    n.appendChild(el('div', 'note', `${ic('info', 17)}<span>기본 항목은 예시로 넣어둔 것입니다. 필요 없는 건 지우고 본인 목록으로 바꾸세요.</span>`));
+    n.appendChild(el('div', 'note', `${ic('info', 17)}<span>${t('sched.defaultNote')}</span>`));
     sc.appendChild(n);
   });
 }

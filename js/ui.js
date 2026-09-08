@@ -1,3 +1,4 @@
+import { locale, t } from './i18n.js';
 /* ui.js — 렌더링 프리미티브: 아이콘, 요소 만들기, 푸시 화면, 시트, 토스트 */
 
 const P = {
@@ -70,7 +71,7 @@ export function el(tag, cls, html) {
   return n;
 }
 export const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-export const fmt = n => Number(n || 0).toLocaleString('ko-KR');
+export const fmt = n => Number(n || 0).toLocaleString(locale());
 
 export function avatarHTML(name, dataUrl, cls = '') {
   const ch = (name || '?').trim()[0] || '?';
@@ -100,7 +101,7 @@ const stack = () => $('#stack');
 
 export function push(title, build, ctaBuild) {
   const v = el('div', 'pushed');
-  v.innerHTML = `<div class="navbar"><button class="back" aria-label="뒤로">${ic('chevL', 24, 2.2)}</button>`
+  v.innerHTML = `<div class="navbar"><button class="back" aria-label="${t('common.back')}">${ic('chevL', 24, 2.2)}</button>`
     + `<span class="ttl">${esc(title)}</span><span class="rt"></span></div>`;
   const sc = el('div', 'scroll');
   v.appendChild(sc);
@@ -162,10 +163,11 @@ export function toast(msg) {
 }
 
 /* ---------- 확인 시트 ---------- */
-export function confirmSheet({ title, lead, danger, ok = '확인', onOk }) {
+export function confirmSheet({ title, lead, danger, ok, onOk }) {
+  ok = ok || t('common.ok');
   openSheet(`<h3>${esc(title)}</h3><p class="lead">${lead}</p>`
     + `<button class="btn ${danger ? 'danger' : ''}" id="cf-ok">${esc(ok)}</button>`
-    + `<button class="btn sub" id="cf-no" style="width:100%;margin-top:8px">취소</button>`);
+    + `<button class="btn sub" id="cf-no" style="width:100%;margin-top:8px">${t('common.cancel')}</button>`);
   $('#cf-ok').onclick = () => { closeSheet(); onOk(); };
   $('#cf-no').onclick = closeSheet;
 }
@@ -191,15 +193,19 @@ export function countUp(node, to, ms = 520) {
 export function segment(items, current, onPick) {
   const wrap = el('div', 'segwrap');
   const seg = el('div', 'seg');
-  const idx = Math.max(0, items.findIndex(([v]) => v === current));
+  /* 고른 값은 계속 바뀐다. 예전에는 만들 때의 current 를 클로저로 물고 있어서,
+     한 번 다른 축으로 옮기면 처음 축으로 **다시 돌아올 수 없었다** —
+     v === current 에 걸려 조용히 return 했다. 그래서 상태를 변수로 들고 간다. */
+  let cur = current;
+  let idx = Math.max(0, items.findIndex(([v]) => v === cur));
   seg.style.setProperty('--n', String(items.length));
   seg.style.setProperty('--i', String(idx));
   seg.appendChild(el('div', 'knob', '<i></i>'));
   items.forEach(([v, label], i) => {
-    const b = el('button', v === current ? 'on' : '', esc(label));
+    const b = el('button', v === cur ? 'on' : '', esc(label));
     b.dataset.v = v;
     b.onclick = () => {
-      if (v === current) return;
+      if (v === cur) return;
       // 다시 그리기 전에 알약을 먼저 옮겨 눌린 즉시 반응하게 한다.
       // 이동 거리에 비례해 늘어나도록 물방울 변수도 같이 넘긴다.
       seg.style.setProperty('--i', String(i));
@@ -211,6 +217,11 @@ export function segment(items, current, onPick) {
         void knob.offsetWidth;
         knob.classList.add('pop');
       }
+      /* on 표시만 제자리에서 옮긴다. 세그먼트를 다시 그리면 알약이
+         새 위치에서 갑자기 나타나 슬라이드가 죽는다. */
+      seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === v));
+      cur = v;
+      idx = i;
       onPick(v);
     };
     seg.appendChild(b);

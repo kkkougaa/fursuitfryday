@@ -157,7 +157,11 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .synced:active{opacity:.5}
 
 /* ---------- 세그먼트 ---------- */
-.segwrap{position:sticky;top:0;z-index:4;background:var(--bg);padding:14px 20px 10px}
+.segwrap{position:sticky;top:0;z-index:4;background:var(--bg);padding:14px 20px 10px;display:flex;align-items:center;gap:10px}
+.segwrap .seg{flex:1 1 auto;min-width:0}
+/* 이 기준으로 사진 탭에서 묶어 보기 — 세그먼트 옆 화살표 */
+.axis-go{flex:none;width:44px;height:44px;border-radius:14px;background:var(--fill);color:var(--g600);display:flex;align-items:center;justify-content:center;transition:background var(--d-1),transform var(--d-1) var(--e-out)}
+.axis-go:active{transform:scale(.94);background:var(--fill-3)}
 /* 알약은 폭을 애니메이션하지 않는다 — 폭을 트랜지션하면 반경·그림자가 찌그러진다.
    버튼이 모두 같은 폭(flex:1, gap 없음)이므로 자기 폭의 배수만큼 옮기면 정확히 맞는다.
    JS 로 폭을 재지 않으니 웹폰트가 늦게 떠도 어긋나지 않는다. */
@@ -206,10 +210,39 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .cell .pick{position:absolute;inset:0;display:none;align-items:flex-start;justify-content:flex-end;padding:5px}
 .cell .pick i{width:21px;height:21px;border-radius:50%;border:1.8px solid rgba(255,255,255,.95);background:rgba(15,18,22,.24);display:flex;align-items:center;justify-content:center;color:#fff;transition:transform var(--d-1) var(--e-spring)}
 .selecting .cell .pick{display:flex}
+/* 제안 검토 격자 — 시트 안에서만 스크롤한다. 한 화면에 다 담으려 들면
+   장수가 많을 때 적용 버튼이 화면 밖으로 밀려 누를 수가 없다.
+
+   표현을 사진 목록의 선택과 **반대로** 잡는다. 목록에서는 고른 것을 파랗게
+   강조하는데, 여기서는 처음부터 전부 켜져 있어서 그러면 격자 전체가 파란
+   테두리로 덮이고 이미지가 88% 로 줄어 사진을 알아볼 수가 없다.
+   남은 것이 기본이고 **뺀 것**이 예외이므로, 뺀 것만 눈에 띄게 한다. */
+.sug-rev{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px;max-height:44vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-top:10px;padding:2px}
+.sug-rev .cell{padding:0;border:0;cursor:pointer;background:var(--fill-3);border-radius:10px}
+/* 남은 사진: 손대지 않은 그대로. 체크는 작게 얹기만 한다. */
+.sug-rev .cell.sel{background:var(--fill-3)}
+.sug-rev .cell.sel img{transform:none;opacity:1}
+.sug-rev .cell .pick{display:flex;padding:4px}
+.sug-rev .cell.sel .pick i{width:18px;height:18px;border-width:1.5px;border-color:rgba(255,255,255,.92);background:rgba(15,18,22,.34);transform:none}
+/* 뺀 사진: 색을 빼고 흐리게. 동그라미는 비워 둔다. */
+.sug-rev .cell:not(.sel) img{opacity:.34;transform:none;filter:grayscale(1)}
+.sug-rev .cell:not(.sel) .pick i{width:18px;height:18px;border-width:1.5px;border-color:rgba(15,18,22,.28);background:transparent;color:transparent}
 .cell.sel{background:var(--blue)}
 .cell.sel img{transform:scale(.88)}
 .cell.sel .pick i{background:var(--blue);border-color:#fff;transform:scale(1.1)}
 
+/* 사진 탭의 임시 묶음 — 카탈로그에는 아무것도 쓰지 않고 화면에서만 묶는다 */
+.gbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 20px 4px;padding:9px 12px 9px 14px;border-radius:13px;background:var(--fill);font-size:12.5px;font-weight:700;letter-spacing:-.03em;color:var(--g600)}
+.gbar button{flex:none;height:28px;padding:0 11px;border-radius:9px;background:var(--bg);font-size:12px;font-weight:700;letter-spacing:-.03em;color:var(--g700)}
+.gbar button:active{background:var(--fill-3)}
+.ghead{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:14px 20px 8px}
+.ghead svg{flex:none;color:var(--g400);transition:transform var(--d-2) var(--e-out)}
+.ghead.on svg{transform:rotate(90deg)}
+.ghead .t{font-size:15px;font-weight:700;letter-spacing:-.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ghead .s{font-size:12.5px;font-weight:600;color:var(--g500);white-space:nowrap;flex:none}
+.ghead .n{margin-left:auto;flex:none;font-size:12.5px;font-weight:600;color:var(--g500)}
+.ghead:active .t{opacity:.6}
+.gbody:empty{display:none}
 .gridfoot{padding:18px 20px 4px;display:flex;justify-content:center}
 .more{height:40px;padding:0 18px;border-radius:13px;background:var(--fill);font-size:13.5px;font-weight:700;letter-spacing:-.03em;color:var(--g700);transition:transform var(--d-1) var(--e-out)}
 .more:active{transform:scale(.96)}
@@ -910,6 +943,39 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .gate p{margin:10px 0 0;font-size:14.5px;font-weight:600;color:var(--g500);letter-spacing:-.028em;line-height:1.6;animation:fadeUp var(--d-3) var(--e-out) 140ms both}
 .gate .btn{margin-top:32px;animation:fadeUp var(--d-3) var(--e-out) 200ms both}
 .gate .fine{margin-top:16px;font-size:12.5px;font-weight:600;color:var(--g400);line-height:1.6;animation:fadeUp var(--d-3) var(--e-out) 260ms both}
+/* 시작 안내 — 처음 여는 사람이 여기서 막히는 세 가지만 적는다.
+   본문 정렬을 왼쪽으로 두는 이유: 순서가 있는 지시문이라 가운데 정렬하면
+   눈이 매 줄 앞을 다시 찾아야 한다. */
+.gate .guide{
+  width:100%;max-width:320px;margin-top:26px;text-align:left;
+  background:var(--fill-2);border-radius:16px;padding:6px 4px;
+  box-shadow:var(--card-shadow);
+  animation:fadeUp var(--d-3) var(--e-out) 200ms both;
+}
+.gate .guide .gi{display:flex;gap:11px;align-items:flex-start;padding:11px 13px}
+.gate .guide .gi+.gi{border-top:1px solid var(--line)}
+.gate .guide .n{
+  flex:none;width:21px;height:21px;border-radius:7px;background:var(--fill-3);
+  color:var(--g600);font-size:11.5px;font-weight:800;line-height:21px;text-align:center;
+  margin-top:1px;
+}
+.gate .guide .tx{font-size:13px;font-weight:600;color:var(--g600);letter-spacing:-.025em;line-height:1.55}
+.gate .guide .tx b{color:var(--g900);font-weight:700}
+.gate .demo{
+  margin-top:14px;height:38px;padding:0 15px;border-radius:12px;
+  background:transparent;color:var(--g500);font-size:13px;font-weight:700;letter-spacing:-.03em;
+  animation:fadeUp var(--d-3) var(--e-out) 320ms both;
+}
+.gate .demo:active{background:var(--fill)}
+/* 게이트 언어 전환 — 로그인 전에도 바꿀 수 있어야 한다.
+   일본어 기기는 처음부터 일본어로 뜨지만, 손으로 바꿀 길이 있어야 한다. */
+.gate .langs{display:flex;gap:6px;margin-top:20px;animation:fadeUp var(--d-3) var(--e-out) 380ms both}
+.gate .langs button{
+  height:32px;padding:0 13px;border-radius:10px;background:var(--fill);
+  font-size:12.5px;font-weight:700;letter-spacing:-.02em;color:var(--g500);
+  transition:background var(--d-1),color var(--d-1);
+}
+.gate .langs button.on{background:var(--g900);color:var(--bg)}
 
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:1ms!important;animation-delay:0ms!important;transition-duration:1ms!important}

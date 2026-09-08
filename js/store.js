@@ -8,22 +8,21 @@
  * 비밀(unavatar 키)은 여기 넣지 않는다. 동기화되는 파일에 비밀을 두지 않는다.
  */
 import * as drive from './drive.js';
+import { t } from './i18n.js';
 
 /* 5 에서 사진에 plannedAt(업로드 예정 표시 시각)이 붙었다. 없어도 되는 필드라
    옛 catalog 를 그대로 읽어도 문제없다 — 표시가 없는 것으로 취급된다. */
 export const SCHEMA = 5;
 
 /** 앱 전체 액센트 후보. app.css 의 [data-accent] 블록과 짝이 맞다. */
+/* 이름은 여기 박지 않는다 — 모듈이 한 번만 평가되므로 언어를 바꿔도
+   그때 담긴 이름이 그대로 남는다. 쓸 때 accentName(k) 로 꺼낸다. */
 export const ACCENTS = [
-  { k: 'blue', name: '파랑' },
-  { k: 'teal', name: '청록' },
-  { k: 'green', name: '초록' },
-  { k: 'purple', name: '보라' },
-  { k: 'pink', name: '분홍' },
-  { k: 'red', name: '빨강' },
-  { k: 'amber', name: '호박' },
-  { k: 'ink', name: '먹색' },
+  { k: 'blue' }, { k: 'teal' }, { k: 'green' }, { k: 'purple' },
+  { k: 'pink' }, { k: 'red' }, { k: 'amber' }, { k: 'ink' },
 ];
+
+export const accentName = k => t('accent.' + k);
 
 /** 앱 전체 액센트를 문서에 적용한다. 색 정의는 CSS 가 갖고 있다. */
 export function applyAccent(k) {
@@ -43,8 +42,13 @@ export function emptyCatalog() {
   return {
     v: SCHEMA,
     syncedAt: null,
+    lastBackup: null,       // 마지막으로 사본을 남긴 날(YYYY-MM-DD)
     me: { nick: '', x: null, avatar: null },   // 내 프로필
-    folders: [],            // [{id,name}]
+    folders: [],            // [{id,name}]  — 사용자가 고른 루트
+    /* 동기화 때 만난 하위 폴더들. { id: {name, parent} }
+       "폴더 이름 = 행사 이름" 으로 정리해 둔 사람에게 분류를 제안하는 데 쓴다.
+       사진 자체는 p.folder 로 자기 폴더를 가리킨다. */
+    folderTree: {},
     /* 행사는 사진 분류 축과 일정을 겸한다 — 같은 행사를 두 군데에 따로 적을 이유가 없다.
        date=시작일, endDate=종료일(여러 날 묶는 컨벤션). 하루면 endDate 는 null.
        going=참가 확정 여부. false 면 "미정" 으로, 홈 디데이를 차지하지 않는다.
@@ -55,15 +59,20 @@ export function emptyCatalog() {
     eventTags: [],          // 행사 카테고리 [{name,color}]. 사진 태그(tags)와 별개.
     /* 짐 챙기기 공용 목록. 설정에서 관리하고 체크는 행사별(events[].packed)로 따로 남는다. */
     packing: [
-      { id: 'pk1', text: '슈트 본체' },
-      { id: 'pk2', text: '헤드' },
-      { id: 'pk3', text: '핸드포 · 풋포' },
-      { id: 'pk4', text: '쿨링 조끼 · 아이스팩' },
-      { id: 'pk5', text: '얼음물 · 이온 음료' },
-      { id: 'pk6', text: '여분 티셔츠 · 수건' },
-      { id: 'pk7', text: '탈취 스프레이' },
-      { id: 'pk8', text: '보조배터리' },
+      { id: 'pk1', text: t('pack.suit') },
+      { id: 'pk2', text: t('pack.head') },
+      { id: 'pk3', text: t('pack.paws') },
+      { id: 'pk4', text: t('pack.cooling') },
+      { id: 'pk5', text: t('pack.drink') },
+      { id: 'pk6', text: t('pack.shirt') },
+      { id: 'pk7', text: t('pack.spray') },
+      { id: 'pk8', text: t('pack.battery') },
     ],
+    /* 지운 것의 열쇠를 남긴다(묘비).
+       병합이 서버본과 합집합이라 삭제를 표현할 방법이 없었다 — 다른 기기의
+       서버본에 남아 있던 행사·짐 항목이 동기화 때마다 되살아났다.
+       여기 적힌 것은 병합에서 걷어낸다. */
+    deleted: { events: [], packing: [], eventTags: [], tags: [] },
     shooters: [],           // [{id,name,x,avatar}]   x = X 핸들, avatar = base64 96px
     people: [],             // 같이 찍은 퍼슈트 [{id,name,role,x,avatar}]
     tags: [],               // 자유 태그. 설정에서 직접 만든 것만 들어간다.
@@ -112,12 +121,14 @@ export async function load() {
   if (!f) {
     S.catFileId = null;
     S.cat = emptyCatalog();
+    pCache = null;
     return { created: false, found: false };
   }
   S.catFileId = f.id;
   S.catVersion = f.version;
   const raw = await drive.readCatalog(f.id);
   S.cat = migrate(raw);
+  pCache = null;
   return { found: true };
 }
 
@@ -129,6 +140,12 @@ function migrate(raw) {
   c.me = { ...base.me, ...(raw.me || {}) };
   for (const k of ['folders', 'events', 'shooters', 'people', 'tags', 'dismissed', 'eventTags', 'packing']) {
     if (!Array.isArray(c[k])) c[k] = base[k];
+  }
+  if (!c.folderTree || typeof c.folderTree !== 'object') c.folderTree = {};
+  // 묘비: 예전 카탈로그에는 없던 필드라 모양을 맞춰 준다
+  c.deleted = { ...base.deleted, ...(raw.deleted || {}) };
+  for (const k of Object.keys(base.deleted)) {
+    if (!Array.isArray(c.deleted[k])) c.deleted[k] = [];
   }
   // 예전 스키마의 행사에 일정 필드를 채워준다
   c.events = c.events.map(e => ({
@@ -158,8 +175,62 @@ let waiters = [];
 /** 화면 조작은 메모리에 즉시 반영하고, 저장은 묶어서 한 번. */
 export function touch() {
   S.dirty = true;
+  pCache = null;          // 사진이 바뀌었으니 캐시를 버린다
   clearTimeout(timer);
   timer = setTimeout(() => { flush(); }, 2500);
+  return S.cat;
+}
+
+/** 삭제를 묘비에 적는다. 병합에서 이 열쇠는 서버본에서 걷어낸다. */
+export function markDeleted(kind, key) {
+  const d = (S.cat.deleted ||= { events: [], packing: [], eventTags: [], tags: [] });
+  d[kind] = d[kind] || [];
+  if (!d[kind].includes(key)) d[kind].push(key);
+}
+
+/** 되돌릴 수 없는 변경(삭제)은 미루지 않고 바로 쓴다.
+ *  touch() 는 2.5초 뒤에 저장하는데, 그 사이 앱이 백그라운드로 가면
+ *  아이폰이 페이지를 먼저 죽여 드라이브 쓰기가 끊긴다. 그러면 다음에 열 때
+ *  지운 것이 그대로 남아 있다 — "지워도 자꾸 살아남" 의 절반이 이것이었다. */
+export function touchNow() {
+  S.dirty = true;
+  return flush().catch(() => {});   // 실패하면 dirty 가 남아 다음 저장에 다시 실린다
+}
+
+/* ---------- 백업 ----------
+ * 하루에 한 번만 남긴다. 사본은 최근 7개까지 두고 오래된 것은 지운다 —
+ * catalog 는 아바타가 들어가 수백 KB 가 되므로 무한히 쌓을 것이 아니다.
+ * 실패는 삼킨다: 백업이 안 됐다고 앱을 못 쓰게 만들 이유가 없다. */
+const KEEP_BACKUPS = 7;
+
+export async function backupIfDue() {
+  if (S.demo || !S.catFileId) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  if (S.cat.lastBackup === today) return null;
+  try {
+    await drive.createBackup(S.cat, today);
+    S.cat.lastBackup = today;
+    touch();
+    const list = await drive.listBackups();
+    for (const f of list.slice(KEEP_BACKUPS)) {
+      await drive.deleteFile(f.id).catch(() => { /* 지우기 실패는 넘어간다 */ });
+    }
+    return today;
+  } catch {
+    return null;
+  }
+}
+
+export const listBackups = () => drive.listBackups();
+
+/** 사본으로 현재 기록을 덮는다. 되돌릴 수 없으므로 호출부에서 반드시 확인받는다. */
+export async function restoreBackup(id) {
+  const raw = await drive.readCatalog(id);
+  if (!raw || typeof raw !== 'object' || !raw.photos) throw new Error('bad backup');
+  S.cat = migrate(raw);
+  pCache = null;
+  S.dirty = true;
+  await flush();
   return S.cat;
 }
 
@@ -204,6 +275,7 @@ export async function flush() {
 async function mergeFromServer() {
   const server = migrate(await drive.readCatalog(S.catFileId));
   const mine = S.cat;
+  pCache = null;
 
   // 사진: 필드 단위로 병합. 사용 이력은 URL 기준 합집합(기록은 지우지 않는다).
   for (const [id, sp] of Object.entries(server.photos)) {
@@ -220,14 +292,27 @@ async function mergeFromServer() {
        살리는 쪽이 틀렸을 때는 눈에 보이고 한 번 누르면 끝난다. */
     mp.plannedAt ??= sp.plannedAt ?? null;
   }
-  // 마스터 목록: 이름 기준 합집합
-  mine.events = unionBy([...server.events, ...mine.events], e => e.id);
+  /* 묘비를 먼저 합친다. 양쪽에서 지운 것이 모두 남아야 한다. */
+  const tomb = {};
+  for (const k of ['events', 'packing', 'eventTags', 'tags']) {
+    tomb[k] = new Set([
+      ...((server.deleted && server.deleted[k]) || []),
+      ...((mine.deleted && mine.deleted[k]) || []),
+    ]);
+  }
+  mine.deleted = Object.fromEntries(Object.entries(tomb).map(([k, v]) => [k, [...v]]));
+
+  /* 마스터 목록: 합집합으로 합친 뒤 묘비에 적힌 것을 걷어낸다.
+     걷어내지 않으면 지운 행사가 서버본에서 되살아난다. */
+  const alive = (arr, k, key) => arr.filter(x => !tomb[k].has(key(x)));
+
+  mine.events = alive(unionBy([...server.events, ...mine.events], e => e.id), 'events', e => e.id);
   // 카테고리는 객체라 Set 으로 중복이 안 걸러진다. 이름 기준으로 합치고 내 색을 살린다.
-  mine.eventTags = unionBy([...(server.eventTags || []), ...(mine.eventTags || [])], t => t.name);
-  mine.packing = unionBy([...(server.packing || []), ...(mine.packing || [])], x => x.id);
+  mine.eventTags = alive(unionBy([...(server.eventTags || []), ...(mine.eventTags || [])], t => t.name), 'eventTags', t => t.name);
+  mine.packing = alive(unionBy([...(server.packing || []), ...(mine.packing || [])], x => x.id), 'packing', x => x.id);
   mine.shooters = unionBy([...server.shooters, ...mine.shooters], s => s.id);
   mine.people = unionBy([...server.people, ...mine.people], p => p.id);
-  mine.tags = [...new Set([...server.tags, ...mine.tags])];
+  mine.tags = [...new Set([...server.tags, ...mine.tags])].filter(t => !tomb.tags.has(t));
   mine.dismissed = [...new Set([...server.dismissed, ...mine.dismissed])];
   mine.gone = { ...server.gone, ...mine.gone };
 
@@ -247,8 +332,20 @@ function unionBy(arr, key) {
 
 /* ---------- 동기화 (드라이브 → catalog 한 방향 대조) ---------- */
 
-export function syncFiles(files) {
+/**
+ * 드라이브 목록과 catalog 를 대조한다.
+ * @param {object[]} files    이미지 파일 목록
+ * @param {object[]} [folders] 만난 폴더들 — 폴더 기반 제안에 쓴다
+ */
+export function syncFiles(files, folders) {
   const cat = S.cat;
+  pCache = null;
+
+  if (folders) {
+    // 트리는 통째로 갈아 끼운다. 드라이브에서 폴더를 지우면 같이 사라져야 한다.
+    cat.folderTree = {};
+    for (const f of folders) cat.folderTree[f.id] = { name: f.name, parent: f.parent };
+  }
   const byMd5 = new Map();
   for (const [id, p] of Object.entries(cat.photos)) if (p.md5) byMd5.set(p.md5, { id, p });
   for (const [id, p] of Object.entries(cat.gone)) if (p.md5) byMd5.set(p.md5, { id, p, wasGone: true });
@@ -291,7 +388,7 @@ export function syncFiles(files) {
 }
 
 function newPhoto() {
-  return { event: null, shooter: null, people: [], tags: [], usages: [], plannedAt: null };
+  return { event: null, shooter: null, people: [], tags: [], usages: [], plannedAt: null, folder: null };
 }
 
 function refresh(p, f) {
@@ -306,6 +403,8 @@ function refresh(p, f) {
   p.lens = m.lens || null;
   p.iso = m.isoSpeed || null;
   p.exposure = fmtExposure(m.exposureTime, m.aperture);
+  // 자기 폴더. 드라이브에서 파일이 옮겨지면 다음 동기화에 따라온다.
+  p.folder = (f.parents || [])[0] || p.folder || null;
   p.event ??= null;
   p.shooter ??= null;
   p.people ||= [];
@@ -332,7 +431,21 @@ function fmtExposure(t, ap) {
 
 /* ---------- 조회 헬퍼 ---------- */
 
-export const photos = () => Object.entries(S.cat.photos).map(([id, p]) => ({ id, ...p }));
+/* photos() 는 호출마다 **사진 수만큼 객체를 새로 만든다**. 한 번 그릴 때
+   filtered() · groups() · counts() · 제안 엔진이 각각 부르니, 2천 장이면
+   렌더 한 번에 수천 개가 만들어졌다 버려진다. 그래서 한 번 만들고 재사용한다.
+
+   무효화는 touch() 가 맡는다 — 사진을 고치는 경로는 전부 touch() 를 부르게
+   되어 있다(그러지 않으면 저장도 안 되니 규칙이 이미 강제돼 있다).
+   카탈로그를 통째로 바꾸는 곳에서는 invalidatePhotos() 를 직접 부른다.
+
+   photos() 가 돌려주는 것은 **사본**이다. 고칠 때는 예전부터 S.cat.photos[id] 를
+   직접 만졌으니(사진 상세도 그렇다) 캐시가 그 규칙을 바꾸지는 않는다. */
+let pCache = null;
+
+export function invalidatePhotos() { pCache = null; }
+
+export const photos = () => (pCache ||= Object.entries(S.cat.photos).map(([id, p]) => ({ id, ...p })));
 export const isUsed = p => (p.usages || []).length > 0;
 
 /* 업로드 예정으로 담아둔 사진.
@@ -375,6 +488,28 @@ export function addEvent(name, date, place, opts = {}) {
   };
   S.cat.events.push(e); touch(); return e;
 }
+export const UNKNOWN_EVENT = 'e-unknown';
+
+/** "행사 미상" 은 미지정과 다르다 — 어느 행사였는지 찾아본 뒤 모른다고
+ *  결론 낸 사진들을 모아 두는 자리다. 미지정으로 두면 "아직 정할 것" 목록에
+ *  영원히 남아 매번 다시 확인하게 된다.
+ *
+ *  날짜가 없어서 일정(디데이)에는 잡히지 않고, 복사 문구의 해시태그에서도
+ *  빠진다 — "#행사미상" 은 아무 뜻이 없다. */
+export function unknownEvent() {
+  let e = S.cat.events.find(x => x.id === UNKNOWN_EVENT);
+  if (!e) {
+    e = {
+      id: UNKNOWN_EVENT, name: t('common.unknownEvent'), date: null, endDate: null,
+      going: false, place: null, note: null, logo: null,
+      tags: [], sub: [], prep: [], packed: [], unknown: true,
+    };
+    S.cat.events.push(e);
+    touch();
+  }
+  return e;
+}
+
 export const UNKNOWN_SHOOTER = 's-unknown';
 
 /** "사진사 미상" 은 미지정과 다르다 — 알아본 뒤 모른다고 결론 낸 상태다.
@@ -383,7 +518,7 @@ export const UNKNOWN_SHOOTER = 's-unknown';
 export function unknownShooter() {
   let s = S.cat.shooters.find(x => x.id === UNKNOWN_SHOOTER);
   if (!s) {
-    s = { id: UNKNOWN_SHOOTER, name: '사진사 미상', x: null, avatar: null, unknown: true };
+    s = { id: UNKNOWN_SHOOTER, name: t('common.unknownShooter'), x: null, avatar: null, unknown: true };
     S.cat.shooters.push(s);
     touch();
   }
@@ -423,7 +558,7 @@ export function copyTextFor(p) {
   const { opts } = S.cat;
   const tags = [];
   const ev = p.event && eventById(p.event);
-  if (opts.eventTag && ev) tags.push(hashtagify(ev.name));
+  if (opts.eventTag && ev && !ev.unknown) tags.push(hashtagify(ev.name));
   tags.push(...(opts.tags || []));
   const sh = p.shooter && shooterById(p.shooter);
   const credit = sh?.x ? `${opts.emoji} ${opts.prefix}${sh.x}` : '';

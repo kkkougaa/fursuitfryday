@@ -21,8 +21,18 @@ const PHOTO_FIELDS = [
 const IMAGE_Q = "(mimeType contains 'image/')";
 
 /** 폴더 하위(재귀)의 이미지 전부. 페이지네이션은 1000개 단위. */
+/**
+ * 고른 폴더 아래의 이미지를 모두 모은다. 하위 폴더도 내려간다.
+ *
+ * 폴더 이름과 부모도 같이 돌려준다. 어차피 모든 폴더를 방문하니 **추가 요청이
+ * 없고**, 이게 있으면 "폴더 이름 = 행사 이름" 으로 정리해 둔 사람의 첫 분류를
+ * 제안으로 대신할 수 있다. 예전에는 폴더를 큐에 넣고 이름을 버렸다.
+ *
+ * @returns {Promise<{files: object[], folders: object[]}>}
+ */
 export async function listImages(folderIds, onProgress) {
   const seen = new Map();
+  const folders = new Map();
   const queue = [...folderIds];
   const done = new Set();
 
@@ -51,6 +61,7 @@ export async function listImages(folderIds, onProgress) {
       for (const f of data.files || []) {
         if (f.mimeType === 'application/vnd.google-apps.folder') {
           queue.push(f.id);
+          folders.set(f.id, { id: f.id, name: f.name, parent: (f.parents || [])[0] || null });
         } else if (f.mimeType?.startsWith('image/')) {
           seen.set(f.id, f);
         }
@@ -59,7 +70,7 @@ export async function listImages(folderIds, onProgress) {
       onProgress?.(seen.size);
     } while (pageToken);
   }
-  return [...seen.values()];
+  return { files: [...seen.values()], folders: [...folders.values()] };
 }
 
 /** 폴더 이름 등 단건 조회 */
@@ -139,6 +150,43 @@ export async function createCatalog(data) {
     body,
   });
   return res.json();
+}
+
+/* ---------------- 백업 ----------------
+ *
+ * 기록 전부가 catalog 한 파일에 들어 있다. 병합이 어긋나거나 실수로 지우면
+ * 되돌릴 방법이 없었다. 그래서 날짜별 사본을 드라이브에 남긴다.
+ * 사본도 이 앱이 만든 파일이라 drive.file 스코프로 충분하다.
+ */
+const BACKUP_PREFIX = 'fursuitfryday.backup.';
+
+export async function createBackup(data, stamp) {
+  const meta = { name: `${BACKUP_PREFIX}${stamp}.json`, mimeType: 'application/json' };
+  const body = multipart(meta, JSON.stringify(data));
+  const res = await api(`${UPLOAD}?uploadType=multipart&fields=id,name`, {
+    method: 'POST',
+    headers: { 'Content-Type': `multipart/related; boundary=${BOUNDARY}` },
+    body,
+  });
+  return res.json();
+}
+
+/** 최신 사본이 먼저. 이름에 날짜가 들어 있어 이름 역순이 곧 최신순이다. */
+export async function listBackups() {
+  const q = new URLSearchParams({
+    q: `name contains '${BACKUP_PREFIX}' and trashed = false`,
+    fields: 'files(id,name,size,modifiedTime)',
+    orderBy: 'name desc',
+    pageSize: '30',
+    spaces: 'drive',
+  });
+  const res = await api(`${FILES}?${q}`);
+  const { files = [] } = await res.json();
+  return files;
+}
+
+export async function deleteFile(id) {
+  await api(`${FILES}/${id}`, { method: 'DELETE' });
 }
 
 /**

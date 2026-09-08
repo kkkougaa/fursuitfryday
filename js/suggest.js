@@ -7,6 +7,7 @@
  *     "아니요" → dismissed 에 영구 기록. "나중에" → 이번 세션만 숨김.
  */
 import { S, photos, isUnfiled, eventById, shooterById, touch, UNKNOWN_SHOOTER } from './store.js';
+import { t } from './i18n.js';
 
 const laterKeys = new Set(); // 세션 한정
 
@@ -19,6 +20,7 @@ export function build() {
 
   out.push(...cameraToShooter(all));
   out.push(...dateToEvent(all));
+  out.push(...folderGroups(all));
   out.push(...newEventClusters(all));
 
   return out
@@ -55,12 +57,12 @@ function cameraToShooter(all) {
     out.push({
       key: `cam:${cam}→${topId}`,
       kind: 'shooter',
-      why: `${cam} 로 찍힌 ${ids.length}장`,
-      q: `${sh.name} 사진사가 찍은 사진인가요?`,
-      note: ambiguous ? `이 카메라를 쓰는 사진사가 ${ranked.length}명이라 확실하지 않아요` : null,
+      why: t('sug.camWhy', { cam, n: ids.length }),
+      q: t('sug.shooterQ', { name: sh.name }),
+      note: ambiguous ? t('sug.camNote', { n: ranked.length }) : null,
       ids,
       apply: { shooter: topId },
-      alwaysLabel: ambiguous ? null : `앞으로 ${cam} 은 ${sh.name}`,
+      alwaysLabel: ambiguous ? null : t('sug.always', { cam, name: sh.name }),
       alwaysKey: cam,
       alwaysValue: topId,
       confidence: topN,
@@ -88,12 +90,169 @@ function dateToEvent(all) {
     return {
       key: `date:${d}→${e.id}`,
       kind: 'event',
-      why: `${fmtDate(d)} 에 찍힌 ${ids.length}장`,
-      q: `${e.name} 사진인가요?`,
+      why: t('sug.dateWhy', { date: fmtDate(d), n: ids.length }),
+      q: t('sug.eventQ', { name: e.name }),
       ids,
       apply: { event: e.id },
     };
   });
+}
+
+/* ---------- 폴더 구조로 제안 ----------
+ *
+ * 폴더로 이미 정리해 둔 사람은 사실상 분류를 끝내 놓은 것이다. 그걸 읽어내면
+ * 첫 분류 비용이 거의 사라진다.
+ *
+ * 어려운 지점은 "몇 번째 층이 행사냐" 다. 사람마다 다르게 쌓으므로 정답이 없다.
+ * 그래서 **깊이를 보지 않는다.** 그 폴더에 든 사진이 어떻게 생겼는지만 본다.
+ * 필요한 값은 이미 catalog 에 있다 — shotAt, cameraModel.
+ *
+ *   촬영일 폭이 좁고 카메라가 여럿   → 행사   (여러 사진사가 같은 날을 찍었다)
+ *   카메라가 하나이고 부모가 행사     → 사진사
+ *   이름이 기존 사진사와 같다         → 사진사 (깊이 무관, 가장 강한 신호)
+ *
+ * 몇 층 깊이든 상관없고, 사람이 사진사/행사 순서로 거꾸로 쌓아 놨어도
+ * 내용으로 판정하니 그대로 맞는다. 애매한 폴더(하루·카메라 하나)는
+ * 아무 제안도 하지 않는다 — 틀린 제안을 쌓는 것이 더 나쁘다.
+ */
+const F_MIN = 5;            // 이보다 적은 폴더는 노이즈다
+const F_EVENT_SPAN = 3;     // 행사로 볼 촬영일 폭(일)
+
+const norm = v => String(v || '').trim().toLowerCase().replace(/^@/, '');
+
+function folderGroups(all) {
+  const tree = S.cat.folderTree || {};
+  if (!Object.keys(tree).length) return [];
+
+  const roots = new Set((S.cat.folders || []).map(f => f.id));
+
+  /* 폴더별로 자기 사진과 하위 폴더 목록을 모은다 */
+  const own = new Map();      // fid → ids
+  for (const p of all) {
+    if (!p.folder) continue;
+    if (!own.has(p.folder)) own.set(p.folder, []);
+    own.get(p.folder).push(p.id);
+  }
+  const kids = new Map();     // fid → [fid]
+  for (const [fid, f] of Object.entries(tree)) {
+    const par = f.parent;
+    if (!par) continue;
+      if (!kids.has(par)) kids.set(par, []);
+    kids.get(par).push(fid);
+  }
+
+  /* 하위까지 합친 사진 (깊이 제한으로 순환 폴더를 방어한다) */
+  const subCache = new Map();
+  const sub = (fid, depth = 0) => {
+    if (subCache.has(fid)) return subCache.get(fid);
+    if (depth > 24) return [];
+    let ids = [...(own.get(fid) || [])];
+    for (const k of kids.get(fid) || []) ids = ids.concat(sub(k, depth + 1));
+    subCache.set(fid, ids);
+    return ids;
+  };
+
+  const stats = ids => {
+    const days = new Set(), cams = new Set();
+    for (const id of ids) {
+      const p = S.cat.photos[id];
+      if (!p) continue;
+      if (p.shotAt) days.add(dayOf(p.shotAt));
+      if (p.cameraModel) cams.add(p.cameraModel);
+    }
+    const ds = [...days].sort();
+    // daysBetween(a, b) 는 a - b 다. 늦은 날을 먼저 넣어야 양수가 나온다.
+    const span = ds.length ? daysBetween(ds[ds.length - 1], ds[0]) : 0;
+    return { span, days: ds.length, cams: cams.size };
+  };
+
+  const shooterByName = name => S.cat.shooters.find(x => !x.unknown
+    && (norm(x.name) === norm(name) || (x.x && norm(x.x) === norm(name))));
+
+  const out = [];
+
+  /* 행사 층을 찾는다: 루트에서 내려가다 처음으로 "행사처럼 생긴" 폴더를 만나면
+     그것을 행사로 제안하고 더 내려가지 않는다. 그 아래 자식들은 사진사 후보다. */
+  /* 사진을 직접 갖지 않고 자식 폴더가 하나뿐인 폴더는 **경로 조각**이다
+     (`2026/봄/봄퍼밋` 의 2026, 봄). 그 자체로는 아무 뜻이 없는데, 하위를
+     합치면 행사처럼 보여서 "2026 을 행사로 만들까요?" 같은 제안이 나왔다.
+     정보가 없는 층은 건너뛰고 계속 내려간다. */
+  const passThrough = fid => (own.get(fid) || []).length === 0
+    && (kids.get(fid) || []).length === 1;
+
+  const walk = (fid, depth) => {
+    if (depth > 24) return;
+    const ids = sub(fid);
+    const isRoot = roots.has(fid);
+
+    if (!isRoot && passThrough(fid)) { walk(kids.get(fid)[0], depth + 1); return; }
+
+    if (!isRoot && ids.length >= F_MIN) {
+      const st = stats(ids);
+      const name = tree[fid] ? tree[fid].name : '';
+
+      // 이름이 기존 사진사와 같으면 깊이와 무관하게 사진사다
+      const known = shooterByName(name);
+      if (known) {
+        const mine = ids.filter(id => S.cat.photos[id] && !S.cat.photos[id].shooter);
+        if (mine.length >= F_MIN) {
+          out.push({
+            key: `fsh:${fid}:${known.id}`,
+            kind: 'shooter',
+            why: t('sug.folderWhy', { name, n: mine.length }),
+            q: t('sug.shooterQ', { name: known.name }),
+            note: t('sug.whyNameMatch', { name: known.name }),
+            ids: mine,
+            apply: { shooter: known.id },
+          });
+        }
+        return;   // 사진사 폴더 아래를 더 파지 않는다
+      }
+
+      if (st.span <= F_EVENT_SPAN && st.cams >= 2) {
+        const mine = ids.filter(id => S.cat.photos[id] && !S.cat.photos[id].event);
+        if (mine.length >= F_MIN) {
+          out.push({
+            key: `fev:${fid}`,
+            kind: 'folderEvent',
+            why: t('sug.folderWhy', { name, n: mine.length }),
+            q: t('sug.folderEventQ'),
+            note: st.span === 0
+              ? t('sug.whyOneDay', { cams: st.cams })
+              : t('sug.whySpan', { days: st.span + 1, cams: st.cams }),
+            ids: mine,
+            folderName: name,
+            folderId: fid,
+          });
+        }
+        // 이 행사 폴더의 자식들은 사진사 후보
+        for (const k of kids.get(fid) || []) {
+          const kids2 = sub(k);
+          const ks = stats(kids2);
+          const kname = tree[k] ? tree[k].name : '';
+          const kmine = kids2.filter(id => S.cat.photos[id] && !S.cat.photos[id].shooter);
+          if (ks.cams === 1 && kmine.length >= F_MIN) {
+            out.push({
+              key: `fsn:${k}`,
+              kind: 'folderShooter',
+              why: t('sug.folderWhy', { name: kname, n: kmine.length }),
+              q: t('sug.folderShooterQ'),
+              note: t('sug.whyOneCam', { parent: name }),
+              ids: kmine,
+              folderName: kname,
+              folderId: k,
+            });
+          }
+        }
+        return;   // 행사 층을 찾았으니 더 내려가지 않는다
+      }
+    }
+
+    for (const k of kids.get(fid) || []) walk(k, depth + 1);
+  };
+
+  for (const r of roots) walk(r, 0);
+  return out;
 }
 
 /** 날짜별로 몰려 있는 미분류 사진 → "새 행사로 만들까요?" */
@@ -112,8 +271,8 @@ function newEventClusters(all) {
     .map(([d, ids]) => ({
       key: `newev:${d}`,
       kind: 'newEvent',
-      why: `${fmtDate(d)} 에 ${ids.length}장이 몰려 있어요`,
-      q: '새 행사로 만들까요?',
+      why: t('sug.clusterWhy', { date: fmtDate(d), n: ids.length }),
+      q: t('sug.newEvent'),
       ids,
       date: d,
     }));
@@ -124,9 +283,11 @@ export function dismiss(key) {
 }
 export function later(key) { laterKeys.add(key); }
 
-/** 제안을 받아들여 사진들에 적용 */
-export function accept(sug, { always = false } = {}) {
-  for (const id of sug.ids) {
+/** 제안을 받아들여 사진들에 적용.
+ *  ids 를 주면 그 사진만 — 카메라·날짜로 묶은 제안은 대개 맞지만 항상
+ *  맞지는 않아서, 받아들이기 전에 아닌 것을 빼는 화면을 거친다. */
+export function accept(sug, { always = false, ids = null } = {}) {
+  for (const id of (ids && ids.length ? ids : sug.ids)) {
     const p = S.cat.photos[id];
     if (!p) continue;
     if (sug.apply?.shooter && !p.shooter) p.shooter = sug.apply.shooter;
