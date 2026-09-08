@@ -12,6 +12,7 @@ import * as av from './avatar.js';
 import {
   $, el, ic, esc, fmt, avatarHTML, flipSwitch, push, pop, popAll, openSheet, closeSheet,
   toast, confirmSheet, wireScroll, segment, countUp, setNavRight, keepScroll, openX, icFill,
+  searchRow,
   result,
 } from './ui.js';
 /* screens2.js 와는 순환 참조다. 서로 함수 선언만 쓰고 모듈 평가 시점에
@@ -21,7 +22,7 @@ import {
 } from './screens2.js';
 import { renderSchedule, ddayCard } from './schedule.js';
 import { fridayCard } from './friday.js';
-import { t } from './i18n.js';
+import { t, sortByName, matches } from './i18n.js';
 
 /* unset: '' | 'any' | 'event' | 'shooter' | 'both'
    칩 하나를 누를 때마다 돌아간다. 예전에는 미분류·행사 미지정·사진사 미지정이
@@ -996,8 +997,8 @@ export function wirePhotoChrome() {
     else if (c === 'planned') { f.planned = !f.planned; renderPhotos(); }
     else if (c === 'tag') { f.tag = null; renderPhotos(); }
     else if (c === 'event') pickSheet(t('pick.event'), eventsByDate().map(e2 => ({ v: e2.id, l: e2.name, n: photos().filter(p => p.event === e2.id).length })), f.event, v => { f.event = v; renderPhotos(); });
-    else if (c === 'shooter') pickSheet(t('pick.shooter'), S.cat.shooters.map(s => ({ v: s.id, l: s.name, n: photos().filter(p => p.shooter === s.id).length })), f.shooter, v => { f.shooter = v; renderPhotos(); });
-    else if (c === 'person') pickSheet(t('pick.person'), S.cat.people.map(s => ({ v: s.id, l: s.name, n: photos().filter(p => (p.people || []).includes(s.id)).length })), f.person, v => { f.person = v; renderPhotos(); });
+    else if (c === 'shooter') pickSheet(t('pick.shooter'), sortByName(S.cat.shooters).map(s => ({ v: s.id, l: s.name, n: photos().filter(p => p.shooter === s.id).length })), f.shooter, v => { f.shooter = v; renderPhotos(); });
+    else if (c === 'person') pickSheet(t('pick.person'), sortByName(S.cat.people).map(s => ({ v: s.id, l: s.name, n: photos().filter(p => (p.people || []).includes(s.id)).length })), f.person, v => { f.person = v; renderPhotos(); });
   });
 
   $('#flt-reset').onclick = () => {
@@ -1060,24 +1061,40 @@ const eventsByDate = () => [...S.cat.events].sort((a, b) => {
 
 function assignSheet(kind, after) {
   const ids = [...V.sel];
-  const list = kind === 'event' ? eventsByDate() : kind === 'shooter' ? S.cat.shooters : S.cat.people;
+  /* 행사는 날짜순을 지킨다 — 최근 것이 위에 와야 찾기 쉽다. 이름순으로 세우면
+     "코믹월드 겨울" 여러 해가 뒤섞인다. 사람은 날짜가 없으니 이름순으로. */
+  const list = kind === 'event' ? eventsByDate()
+    : sortByName(kind === 'shooter' ? S.cat.shooters : S.cat.people);
   const label = t(kind === 'event' ? 'assign.event' : kind === 'shooter' ? 'assign.shooter' : 'assign.person');
-  const rows = list.map(x => {
+  const rowHTML = x => {
     const n = ids.filter(id => {
       const p = S.cat.photos[id];
       return kind === 'person' ? (p?.people || []).includes(x.id) : p?.[kind] === x.id;
     }).length;
     const sub = kind === 'event' ? sug.fmtDate(x.date) : x.x ? '@' + x.x : '';
     return `<button class="opt${n === ids.length ? ' on' : ''}" data-id="${x.id}"><span class="l">${esc(x.name)}${sub ? ` <span class="n">${esc(sub)}</span>` : ''}</span>${n && n < ids.length ? `<span class="n">${n}/${ids.length}</span>` : '<span class="n"></span>'}<span class="c">${ic('check', 18, 2.8)}</span></button>`;
-  }).join('');
+  };
 
   openSheet(`<h3>${t('assign.pick', { label })}</h3><p class="lead">${t('assign.lead', { n: fmt(ids.length) })}</p>`
-    + `<div class="opts" id="as-list">${rows || ''}</div>`
+    + `<div id="as-srch"></div>`
+    + `<div class="opts" id="as-list"></div>`
     + `<button class="btn sub" id="as-new" style="width:100%">${ic('plus', 17, 2.2)}${t('assign.new', { label })}</button>`
     + (kind === 'person' ? '' : `<button class="btn sub" id="as-unknown" style="width:100%;margin-top:8px">${ic('info', 17, 2)}${t('assign.unknown', { label })}</button>`)
     + (list.length ? `<button class="btn sub" id="as-clear" style="width:100%;margin-top:8px">${t('assign.clear', { label })}</button>` : ''));
 
-  $('#as-list').onclick = e => {
+  const listBox = $('#as-list');
+  const paintList = q => {
+    const hit = list.filter(x => matches(q, x.name, x.x));
+    listBox.innerHTML = hit.length
+      ? hit.map(rowHTML).join('')
+      : `<div class="nohit">${t('srch.none')}</div>`;
+  };
+  if (list.length >= 8) {
+    $('#as-srch').appendChild(searchRow(t('srch.ph', { label }), paintList));
+  }
+  paintList('');
+
+  listBox.onclick = e => {
     const b = e.target.closest('[data-id]');
     if (!b) return;
     apply(b.dataset.id);
@@ -1389,14 +1406,25 @@ function pickSheet(title, items, cur, apply) {
     $('#pk-x').onclick = closeSheet;
     return;
   }
-  openSheet(`<h3>${esc(title)}</h3><p class="lead">${t('pk.oneOnly')}</p><div class="opts" id="pk"></div>`
+  openSheet(`<h3>${esc(title)}</h3><p class="lead">${t('pk.oneOnly')}</p>`
+    + `<div id="pk-srch"></div><div class="opts" id="pk"></div>`
     + `<button class="btn sub" id="pk-clear" style="width:100%">${t('pk.clear')}</button>`);
   const box = $('#pk');
-  items.forEach(it => {
-    const o = el('button', 'opt' + (cur === it.v ? ' on' : ''), `<span class="l">${esc(it.l)}</span><span class="n">${t('common.photoN', { n: fmt(it.n) })}</span><span class="c">${ic('check', 18, 2.8)}</span>`);
-    o.onclick = () => { apply(it.v); closeSheet(); };
-    box.appendChild(o);
-  });
+  /* 정렬은 부르는 쪽이 정한다 — 행사는 날짜순, 사람은 이름순이 맞다. */
+  const paint = q => {
+    box.innerHTML = '';
+    const hit = items.filter(it => matches(q, it.l));
+    if (!hit.length) { box.appendChild(el('div', 'nohit', t('srch.none'))); return; }
+    hit.forEach(it => {
+      const o = el('button', 'opt' + (cur === it.v ? ' on' : ''), `<span class="l">${esc(it.l)}</span><span class="n">${t('common.photoN', { n: fmt(it.n) })}</span><span class="c">${ic('check', 18, 2.8)}</span>`);
+      o.onclick = () => { apply(it.v); closeSheet(); };
+      box.appendChild(o);
+    });
+  };
+  if (items.length >= 8) {
+    $('#pk-srch').appendChild(searchRow(t('srch.phShort'), paint));
+  }
+  paint('');
   $('#pk-clear').onclick = () => { apply(null); closeSheet(); };
 }
 

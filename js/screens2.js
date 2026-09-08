@@ -18,7 +18,7 @@ import {
   V, NO_FILTER, renderAll, renderHome, renderTabs, goTab, tagSheet, assignSheet, wireXField, newEntitySheet,
 } from './screens.js';
 import { openPacking } from './schedule.js';
-import { t, locale, LANGS, getLang, setLang } from './i18n.js';
+import { t, locale, LANGS, getLang, setLang, sortByName } from './i18n.js';
 import { isFriday } from './friday.js';
 
 /* ============================ 사진 상세 ============================ */
@@ -424,7 +424,7 @@ function paintTags(b) {
   };
 
   mk(t('assign.event'), S.cat.events.map(e => ({ v: e.id, l: e.name, d: sug.fmtDate(e.date), n: all.filter(p => p.event === e.id).length })), 'event');
-  mk(t('assign.shooter'), S.cat.shooters.map(s => ({ v: s.id, l: s.name, d: s.x ? '@' + s.x : t('common.noXId'), x: !!s.x, av: s.avatar, n: all.filter(p => p.shooter === s.id).length })), 'shooter');
+  mk(t('assign.shooter'), sortByName(S.cat.shooters).map(s => ({ v: s.id, l: s.name, d: s.x ? '@' + s.x : t('common.noXId'), x: !!s.x, av: s.avatar, n: all.filter(p => p.shooter === s.id).length })), 'shooter');
   mk(t('ph.people'), S.cat.people.map(s => ({ v: s.id, l: s.name, d: s.role || (s.x ? '@' + s.x : ''), av: s.avatar, n: all.filter(p => (p.people || []).includes(s.id)).length })).sort((a, c) => c.n - a.n), 'person');
   mk(t('find.freeTags'), S.cat.tags.map(tag => ({ v: tag, l: tag, n: all.filter(p => (p.tags || []).includes(tag)).length })).sort((a, c) => c.n - a.n), 'tag');
 
@@ -668,7 +668,8 @@ function openEntityList(kind) {
 
 function paintEntityList(sc, kind, label) {
   sc.innerHTML = '';
-  const list = kind === 'shooter' ? S.cat.shooters : S.cat.people;
+  // 가나다(일본어는 かな) 순. 많아지면 눈으로 찾을 수 있어야 한다.
+  const list = sortByName(kind === 'shooter' ? S.cat.shooters : S.cat.people);
   const all = photos();
   const hd = el('div', 'gtitle');
   hd.innerHTML = `<h2>${label}</h2><div class="m">${t(kind === 'shooter' ? 'ent.shooterLead' : 'ent.personLead')}</div>`;

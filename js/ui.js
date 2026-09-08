@@ -122,6 +122,21 @@ export function skeleton(parts) {
   return box;
 }
 
+/* 검색 줄. 목록이 길어질 때만 붙인다 — 대여섯 개짜리 목록 위에 두면
+ * 자리만 먹는다. onInput 은 키를 뗄 때마다 불린다(목록이 몇백 개여도
+ * 그리는 비용이 작아서 디바운스는 두지 않았다).
+ */
+export function searchRow(placeholder, onInput) {
+  const w = el('div', 'srch');
+  w.innerHTML = `<span class="ic">${ic('sliders', 16, 2)}</span>`
+    + `<input type="search" inputmode="search" autocomplete="off"`
+    + ` autocapitalize="off" autocorrect="off" spellcheck="false"`
+    + ` placeholder="${esc(placeholder)}" aria-label="${esc(placeholder)}">`;
+  const inp = w.querySelector('input');
+  inp.addEventListener('input', () => onInput(inp.value));
+  return w;
+}
+
 export function wireScroll(root = document) {
   root.querySelectorAll('.scroll').forEach(sc => {
     if (sc.dataset.wired) return;

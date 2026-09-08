@@ -24,13 +24,73 @@
      통짜 woff2 는 JP 가 5.3MB 라 dynamic subset 을 쓴다. 119개 청크로
      쪼개져 있어 화면에 실제 나온 글자의 청크만 내려온다. -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-jp-dynamic-subset.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
+<!-- 페인트를 막지 않게 받는다. 이 두 파일이 blocking 이던 동안 jsDelivr
+     왕복 두 번이 첫 페인트 앞을 막고 있었다. 글자는 기본 서체로 먼저 뜨고
+     프리텐다드가 오면 바뀐다(dynamic subset 이 font-display:swap 이다). -->
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-jp-dynamic-subset.css">
+<link rel="stylesheet" media="print" onload="this.media='all'"
+      href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
 <link rel="stylesheet" href="./app.css">
+
+<!-- 모듈을 미리 받는다.
+     ES 모듈은 한 층을 파싱한 뒤에야 다음 층의 임포트를 발견한다. 그래서
+     재 보니 파일 스무 개가 6파로 갈려 순차로 왕복했고(0→300→1000→1300→
+     1600→1800→1900ms) 셸이 준비되기까지 2.1초가 걸렸다. 미리 알려 주면
+     한꺼번에 받는다.
+     demo.js·glass.js 는 빼 뒀다 — 조건부로만 불려서 미리 받으면 낭비다. -->
+<link rel="modulepreload" href="./js/auth.js">
+<link rel="modulepreload" href="./js/avatar.js">
+<link rel="modulepreload" href="./js/config-load.js">
+<link rel="modulepreload" href="./js/drive.js">
+<link rel="modulepreload" href="./js/friday.js">
+<link rel="modulepreload" href="./js/i18n.js">
+<link rel="modulepreload" href="./js/imgutil.js">
+<link rel="modulepreload" href="./js/schedule.js">
+<link rel="modulepreload" href="./js/screens.js">
+<link rel="modulepreload" href="./js/screens2.js">
+<link rel="modulepreload" href="./js/store.js">
+<link rel="modulepreload" href="./js/suggest.js">
+<link rel="modulepreload" href="./js/suits.js">
+<link rel="modulepreload" href="./js/thumbcache.js">
+<link rel="modulepreload" href="./js/thumbs.js">
+<link rel="modulepreload" href="./js/ui.js">
+<link rel="modulepreload" href="./config.js">
+
+<!-- 첫 페인트용 스플래시. 여기 스타일을 head 에 직접 두는 이유:
+     app.css 조차 기다리지 않고 HTML 이 도착하는 즉시 그려져야 한다. -->
+<style>
+  #boot{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:16px;background:#fff;
+    font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}
+  #boot img{width:76px;height:76px;display:block}
+  #boot .b-nm{font-size:17px;font-weight:700;letter-spacing:-.04em;color:#191F28}
+  #boot .b-bar{width:104px;height:3px;border-radius:3px;background:#F2F4F6;overflow:hidden}
+  #boot .b-bar i{display:block;width:40%;height:100%;border-radius:3px;background:#3182F6;
+    animation:bootbar 1.1s ease-in-out infinite}
+  @keyframes bootbar{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+  /* JS 가 아예 못 뜬 경우. 순수 CSS 로만 나오므로 스크립트가 죽어도 보인다. */
+  #boot .b-slow{margin-top:2px;font-size:13px;font-weight:600;color:#8B95A1;
+    opacity:0;animation:bootslow .3s ease-out 10s forwards}
+  @media (prefers-color-scheme:dark){
+    #boot{background:#17171C}
+    #boot .b-nm{color:#F7F8F9}
+    #boot .b-bar{background:#23232B}
+  }
+  @keyframes bootslow{to{opacity:1}}
+</style>
 </head>
 <body>
 
 <div id="app">
+  <!-- 첫 페인트. JS 가 게이트나 셸을 띄우는 순간 사라진다. -->
+  <div id="boot">
+    <img src="./icons/icon-180.png" alt="" width="76" height="76">
+    <div class="b-nm">#FursuitFryday</div>
+    <div class="b-bar"><i></i></div>
+    <div class="b-slow">오래 걸리면 새로고침해 주세요</div>
+  </div>
+
   <!-- 로그인 게이트 -->
   <div class="gate" id="gate" hidden></div>
 

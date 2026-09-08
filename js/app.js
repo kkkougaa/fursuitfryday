@@ -25,7 +25,14 @@ const NOGLASS = SAFE || Q.has('noglass');
 const gate = $('#gate');
 const shell = $('#shell');
 
+/* 스플래시는 게이트나 셸이 뜨는 순간 치운다. 남겨 두면 그 위를 덮는다. */
+function hideBoot() {
+  const b = document.getElementById('boot');
+  if (b) b.remove();
+}
+
 function showGate(msg) {
+  hideBoot();
   shell.hidden = true;
   gate.hidden = false;
   /* 안쪽 층에 담는다. 가이드가 길어지면 세로가 넘치는데, 가운데 정렬만
@@ -95,6 +102,7 @@ function showGate(msg) {
 }
 
 function showShell() {
+  hideBoot();
   gate.hidden = true;
   shell.hidden = false;
 }
@@ -520,6 +528,18 @@ async function boot() {
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
+  /* 셸을 캐시에서 먼저 주므로 지금 화면은 옛 코드로 그려졌다.
+     새 것이 준비되면 워커가 알려 주고, 여기서 한 번 물어본다 —
+     말없이 새로고침하면 적고 있던 것이 날아간다. */
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data?.type !== 'updated') return;
+    confirmSheet({
+      title: t('upd.title'),
+      lead: t('upd.lead'),
+      ok: t('upd.now'),
+      onOk: () => { flush().finally(() => location.reload()); },
+    });
+  });
 }
 
 boot();

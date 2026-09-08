@@ -24,7 +24,7 @@ import { V, NO_FILTER, goTab, renderAll, renderHome, assignSheet, reviewSheet } 
 import { suitById, tagEventSuit, onlySuit, addTodo, todoSorted } from './store.js';
 import { catSheet, logoSheet } from './screens2.js';
 import { avatarHTML } from './ui.js';
-import { t } from './i18n.js';
+import { t, sortByName } from './i18n.js';
 
 /* ---------- 날짜 ---------- */
 
@@ -424,7 +424,7 @@ function paintSchedule(sc) {
  * 슈트가 하나뿐이면 고를 것이 없으므로 바로 켠다 — 이 경우 사용자는
  * 이 시트를 볼 일이 없다(위에서 곧바로 붙이는 버튼만 나온다). */
 function broughtSheet(e, after) {
-  const live = S.cat.suits.filter(x => !x.retiredAt);
+  const live = sortByName(S.cat.suits.filter(x => !x.retiredAt));
   let picked = new Set(e.suits || []);
 
   const render = () => {

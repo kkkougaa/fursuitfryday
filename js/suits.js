@@ -24,7 +24,7 @@ import { V, NO_FILTER, goTab, renderAll, wireXField } from './screens.js';
 import { openSettings, meSheet } from './screens2.js';
 import { squareDataURL, pickImage } from './imgutil.js';
 import * as sug from './suggest.js';
-import { t, locale } from './i18n.js';
+import { t, locale, sortByName } from './i18n.js';
 
 /* ---------- 탭 ---------- */
 
@@ -62,8 +62,8 @@ function paintProfile(b) {
   b.appendChild(mp);
 
   /* 내 퍼슈트 */
-  const live = S.cat.suits.filter(x => !x.retiredAt);
-  const retired = S.cat.suits.filter(x => x.retiredAt);
+  const live = sortByName(S.cat.suits.filter(x => !x.retiredAt));
+  const retired = sortByName(S.cat.suits.filter(x => x.retiredAt));
 
   const ss = el('div', 'sec');
   const slb = el('div', 'sec-lb', `<h2>${t('suit.sec')}</h2>`);

@@ -4,7 +4,7 @@
 /* ⚠ 배포할 때마다 이 숫자를 올린다. 안 올리면 iOS 홈 화면 앱이 옛 config.js
    같은 파일을 계속 붙잡고 있어서, 코드를 고쳐도 반영이 안 된 것처럼 보인다.
    특히 스코프처럼 config 에 들어가는 값을 바꿨을 때 증상이 헷갈린다. */
-const V = 'fursuitfryday-v32';
+const V = 'fursuitfryday-v35';
 const SHELL = [
   './', './index.html', './app.css', './manifest.webmanifest',
   './js/app.js', './js/auth.js', './js/avatar.js',
@@ -20,17 +20,43 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys()
-    .then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k))))
-    .then(() => self.clients.claim()));
+  e.waitUntil((async () => {
+    const ks = await caches.keys();
+    const old = ks.filter(k => k !== V);
+    await Promise.all(old.map(k => caches.delete(k)));
+    await self.clients.claim();
+    /* 캐시 우선이라 지금 열려 있는 화면은 옛 코드로 그려졌다.
+       옛 캐시를 지운 경우에만(=처음 설치가 아닌 경우) 알려 준다. */
+    if (old.length) {
+      const cs = await self.clients.matchAll({ type: 'window' });
+      cs.forEach(c => c.postMessage({ type: 'updated', version: V }));
+    }
+  })());
 });
+/* 캐시 우선. 캐시에 있으면 **기다리지 않고** 준다.
+ *
+ * 예전에는 네트워크를 먼저 기다렸다(network-first). 앱 셸이 파일 스무 개라
+ * 열 때마다 스무 번 왕복했고, 그 동안 화면은 흰 종이였다. 첫 페인트가
+ * 5.6초였던 이유의 절반이 이것이다.
+ *
+ * 새 파일은 뒤에서 받아 캐시만 갈아 둔다 — 다음에 열 때 새 코드가 뜬다.
+ * 그래서 배포하고 한 번 더 열어야 반영된다. 아래 activate 에서 그 사실을
+ * 화면에 알려 준다.
+ */
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (u.origin !== location.origin) return;              // 구글·unavatar 는 통과
-  e.respondWith(
-    fetch(e.request)
-      .then(r => { caches.open(V).then(c => c.put(e.request, r.clone())); return r; })
-      .catch(() => caches.match(e.request, { ignoreSearch: true }))
-  );
+
+  e.respondWith((async () => {
+    const cached = await caches.match(e.request, { ignoreSearch: true });
+    const fresh = fetch(e.request)
+      .then(r => {
+        // 200 이 아닌 것을 캐시에 넣으면 다음에 그 오류가 그대로 나온다
+        if (r && r.ok) caches.open(V).then(c => c.put(e.request, r.clone()));
+        return r;
+      })
+      .catch(() => null);
+    return cached || (await fresh) || Response.error();
+  })());
 });

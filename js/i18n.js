@@ -106,6 +106,12 @@ const DICT = {
     'assign.apply': '적용',
     'assign.asIs': '그대로',
     'assign.cleared': '지정 해제',
+    'upd.title': '새 버전이 준비됐어요',
+    'upd.lead': '지금 새로고침하면 바로 적용됩니다. 적던 내용은 먼저 저장합니다.',
+    'upd.now': '새로고침',
+    'srch.ph': '{label} 검색',
+    'srch.phShort': '이름으로 검색',
+    'srch.none': '찾는 이름이 없어요',
     'assign.pick': '{label} 고르기',
     'assign.pickEventLead': '최근 행사가 위에 옵니다.',
     'assign.pickShooterLead': '사진사 미상도 고를 수 있어요.',
@@ -995,6 +1001,12 @@ const DICT = {
     'assign.apply': '適用',
     'assign.asIs': 'そのまま',
     'assign.cleared': '設定を解除',
+    'upd.title': '新しいバージョンがあります',
+    'upd.lead': '今すぐ再読み込みすると反映されます。書きかけの内容は先に保存します。',
+    'upd.now': '再読み込み',
+    'srch.ph': '{label}を検索',
+    'srch.phShort': '名前で検索',
+    'srch.none': '見つかりません',
     'assign.pick': '{label}を選ぶ',
     'assign.pickEventLead': '最近のイベントが上に来ます。',
     'assign.pickShooterLead': 'カメラマン不明も選べます。',
@@ -1815,6 +1827,46 @@ export const getLang = () => lang;
 
 /** 숫자·날짜 서식에 쓰는 로케일. */
 export const locale = () => (lang === 'ja' ? 'ja-JP' : 'ko-KR');
+
+/* ---------- 이름 정렬 ----------
+ * 언어에 맞는 순서는 브라우저가 안다. 한국어는 가나다, 일본어는 かな 순,
+ * 숫자는 1·2·10 순으로 센다(numeric).
+ *
+ * 한자 이름은 읽는 법을 모르므로 코드 순서가 된다 — 브라우저 공통 한계다.
+ * 読み을 따로 받지 않는 한 어쩔 수 없고, 카나·한글·라틴은 제대로 선다.
+ *
+ * 언어를 바꾸면 정렬 기준도 바뀌어야 해서 언어를 열쇠로 캐시한다.
+ */
+let coll = null;
+let collLang = null;
+function collator() {
+  if (!coll || collLang !== lang) {
+    collLang = lang;
+    coll = new Intl.Collator(locale(), { numeric: true, sensitivity: 'base' });
+  }
+  return coll;
+}
+/** 이름 두 개를 견준다. `list.sort(byName)` 처럼 쓴다. */
+export const byName = (a, b) => collator().compare(String(a ?? ''), String(b ?? ''));
+/** 객체 목록을 이름으로 정렬한 **새 배열**을 낸다. 원본은 건드리지 않는다. */
+export const sortByName = (arr, key = 'name') =>
+  [...arr].sort((a, b) => byName(a?.[key], b?.[key]));
+
+/* ---------- 검색 대조 ----------
+ * 글자를 눕혀서 견준다:
+ *  - 대소문자를 없애고
+ *  - 가타카나를 히라가나로 바꿔(カメラ 로 저장돼도 かめら 로 찾힌다)
+ *  - 자모 결합 형태를 하나로 모은다(NFC)
+ */
+const kataToHira = v => v.replace(/[\u30a1-\u30f6]/g,
+  c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+export const foldText = v => kataToHira(String(v ?? '').normalize('NFC').toLowerCase());
+/** 검색어가 빈 문자열이면 늘 통과한다. */
+export function matches(needle, ...fields) {
+  const q = foldText(needle).trim();
+  if (!q) return true;
+  return fields.some(f => foldText(f).includes(q));
+}
 
 export function setLang(k) {
   if (!DICT[k]) return lang;
