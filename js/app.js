@@ -70,7 +70,7 @@ function showGate(msg) {
   /* 마크는 앱 아이콘 파일을 그대로 쓴다. 글리프로 다시 그리면 홈 화면에
      추가한 아이콘과 미묘하게 달라져서, 같은 앱인지 헷갈린다. */
   box.insertAdjacentHTML('beforeend', `<img class="mark" src="./icons/icon-180.png" alt="" width="76" height="76">`
-    + `<h1 class="peace">#FursuitFryday</h1>`
+    + `<h1>#FursuitFryday</h1>`
     + `<p>${msg || t('gate.lede')}</p>`);
 
   /* 시작하는 방법. 오류 메시지로 띄운 경우(msg)에는 넣지 않는다 —

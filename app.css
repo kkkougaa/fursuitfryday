@@ -1169,14 +1169,6 @@ button.row:active{background:var(--tap);transform:scale(.985)}
    바탕이나 반경을 따로 주지 않는다 — 주면 이중으로 깎여 테가 생긴다. */
 .gate .mark{width:76px;height:76px;display:block;margin-bottom:22px;animation:pop 460ms var(--e-spring) both}
 .gate h1{margin:0;font-size:var(--t2);font-weight:700;letter-spacing:-.045em;line-height:var(--lh2);animation:fadeUp var(--d-3) var(--e-out) 80ms both}
-/* 제목 전용 서체. @font-face 는 index.html 의 head 안에 있다 — 스플래시가
-   이 파일을 기다리지 않아야 해서다. 자간은 평창평화체 쪽이 좁아 보여 조금 풀었다. */
-.peace{font-family:'PyeongChang Peace',var(--f);font-weight:700;letter-spacing:-.025em}
-/* 평창평화체는 프리텐다드보다 13.2% 넓다(측정값). 넓은 폰은 한 줄에 들어가지만
-   386px 미만에서는 "#FursuitFryday🍤" 가 두 줄이 된다. 그 폭에서만 조금 줄인다. */
-@media (max-width:389px){
-  .hdr h1.peace{font-size:calc(var(--t2) * .9)}
-}
 .gate p{margin:10px 0 0;font-size:var(--t6);font-weight:600;color:var(--g500);letter-spacing:-.028em;line-height:var(--lh6);animation:fadeUp var(--d-3) var(--e-out) 140ms both}
 .gate .btn{margin-top:32px;animation:fadeUp var(--d-3) var(--e-out) 200ms both}
 .gate .fine{margin-top:16px;font-size:var(--t8);font-weight:600;color:var(--g500);line-height:var(--lh8);animation:fadeUp var(--d-3) var(--e-out) 260ms both}

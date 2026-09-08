@@ -4,12 +4,15 @@
 /* ⚠ 배포할 때마다 이 숫자를 올린다. 안 올리면 iOS 홈 화면 앱이 옛 config.js
    같은 파일을 계속 붙잡고 있어서, 코드를 고쳐도 반영이 안 된 것처럼 보인다.
    특히 스코프처럼 config 에 들어가는 값을 바꿨을 때 증상이 헷갈린다. */
-const V = 'fursuitfryday-v46';
-/* 스플래시 애니메이션은 **버전과 무관한** 캐시에 둔다.
-   앱 셸 캐시는 배포마다 이름이 바뀌어 통째로 버려지는데, 133KB 를 배포할
-   때마다 다시 받게 할 이유가 없다. 그림이 바뀌면 파일 이름을 바꾸면 된다. */
+const V = 'fursuitfryday-v47';
+/* 스플래시 자산은 **버전과 무관한** 캐시에 둔다. 앱 셸 캐시는 배포마다
+   이름이 바뀌어 통째로 버려지는데, 91KB 를 배포할 때마다 다시 받게 할
+   이유가 없다.
+   ⚠ 그래서 파일 이름에 버전을 박는다(splash-v2-*). 이름을 그대로 두고
+     내용만 고치면 이 캐시가 옛 것을 영원히 내놓는다 — 실제로 한 번 겪었다.
+     그림을 바꿀 때는 v3, v4 로 올리고 index.html 의 주소도 같이 고친다. */
 const MEDIA = 'fursuitfryday-media';
-const MEDIA_RE = /\/icons\/splash\.webp$/;
+const MEDIA_RE = /\/icons\/splash-v\d+[-.a-z]*\.webp$/;
 const SHELL = [
   './', './index.html', './app.css', './manifest.webmanifest',
   './js/app.js', './js/auth.js', './js/avatar.js',
@@ -19,7 +22,6 @@ const SHELL = [
   './js/store.js', './js/suggest.js', './js/suits.js', './js/thumbcache.js',
   './js/thumbs.js', './js/ui.js',
   './config.js', './icons/icon-32.png', './icons/icon-180.png', './icons/icon-192.png',
-  './icons/splash-poster.webp', './fonts/pyeongchang-peace-bold.woff',
 ];
 
 self.addEventListener('install', e => {

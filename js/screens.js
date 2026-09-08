@@ -3,7 +3,7 @@ import {
   S, photos, isUsed, isUnfiled, isPlanned, setPlanned,
   eventById, shooterById, personById,
   addEvent, addShooter, addPerson, normX, touch, flush, copyTextFor, channelOf, hashtagify,
-  unknownShooter, UNKNOWN_SHOOTER, unknownEvent, catColor, DEFAULT_HOME_TITLE,
+  unknownShooter, UNKNOWN_SHOOTER, unknownEvent, catColor,
 } from './store.js';
 import { renderProfile } from './suits.js';
 import * as sug from './suggest.js';
@@ -226,13 +226,7 @@ export function renderHome() {
   const sc = $('#home-scroll');
   if (!sc) return;
   const h1 = document.querySelector('[data-screen="home"] .hdr h1');
-  if (h1) {
-    h1.textContent = S.cat.opts.homeTitle || t('tab.home');
-    /* 기본 제목일 때만 평창평화체. 설정에서 단어를 바꾸면 본문 서체로
-       돌아간다 — 서브셋에 열 글자만 들어 있어서 다른 단어는 어차피
-       못 그리고, 남의 단어를 이 글씨체로 그릴 이유도 없다. */
-    h1.classList.toggle('peace', S.cat.opts.homeTitle === DEFAULT_HOME_TITLE);
-  }
+  if (h1) h1.textContent = S.cat.opts.homeTitle || t('tab.home');
   keepScroll(sc, () => paintHome(sc));
 }
 
