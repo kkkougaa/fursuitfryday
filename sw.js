@@ -4,7 +4,7 @@
 /* ⚠ 배포할 때마다 이 숫자를 올린다. 안 올리면 iOS 홈 화면 앱이 옛 config.js
    같은 파일을 계속 붙잡고 있어서, 코드를 고쳐도 반영이 안 된 것처럼 보인다.
    특히 스코프처럼 config 에 들어가는 값을 바꿨을 때 증상이 헷갈린다. */
-const V = 'fursuitfryday-v44';
+const V = 'fursuitfryday-v46';
 /* 스플래시 애니메이션은 **버전과 무관한** 캐시에 둔다.
    앱 셸 캐시는 배포마다 이름이 바뀌어 통째로 버려지는데, 133KB 를 배포할
    때마다 다시 받게 할 이유가 없다. 그림이 바뀌면 파일 이름을 바꾸면 된다. */
@@ -19,7 +19,7 @@ const SHELL = [
   './js/store.js', './js/suggest.js', './js/suits.js', './js/thumbcache.js',
   './js/thumbs.js', './js/ui.js',
   './config.js', './icons/icon-32.png', './icons/icon-180.png', './icons/icon-192.png',
-  './icons/splash-poster.webp',
+  './icons/splash-poster.webp', './fonts/pyeongchang-peace-bold.woff',
 ];
 
 self.addEventListener('install', e => {

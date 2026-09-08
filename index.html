@@ -10,6 +10,12 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#17171C" media="(prefers-color-scheme: dark)">
+<!-- media 를 안 붙인 것도 하나 둔다. media 를 이해하지 못하는 브라우저가
+     쓸 값이고, store.js 의 applyAccent 가 여기에 --bg(본문 배경)를 써 준다.
+     예전에는 media 붙은 것만 있어서 그 코드가 아무 일도 하지 않았다.
+     ⚠ 액센트 색이 아니라 **본문 배경색**이 들어간다 — 상태바는 늘 흰색(다크면
+     검정)이어야 하고, 액센트를 따라가면 화면 위아래 색이 어긋난다. -->
+<meta name="theme-color" content="#FFFFFF">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="#FursuitFryday">
@@ -66,18 +72,42 @@
   /* app.css 보다 먼저 그려져야 하므로 여기 있는 것에만 의존한다.
      box-sizing 을 직접 정하는 이유: app.css 의 * 규칙에 기대면 그 파일이
      도착하는 순간 링 크기가 튄다. */
+  /* 평창평화체 — 제목 전용. 원본 1.3MB 에 글리프 12,261개인데 제목에
+     쓰는 글자는 10개("#Fadirstuy")뿐이라 그만 남긴 서브셋을 쓴다
+     (tools/subset-font.py 로 만든다 — 1329KB -> 2.2KB).
+     여기 선언하는 이유: 스플래시 제목이 app.css 를 기다리지 않아야 한다.
+     swap = 폰트가 늦거나 실패해도 글자는 바로 보인다. */
+  @font-face{
+    font-family:'PyeongChang Peace';
+    src:url('./fonts/pyeongchang-peace-bold.woff') format('woff'),
+        url('./fonts/pyeongchang-peace-bold.ttf') format('truetype');
+    font-weight:700;font-style:normal;font-display:swap;
+  }
   #boot,#boot *{box-sizing:border-box}
+  /* 상태바 자리는 흰색으로 남긴다.
+     이 앱은 viewport-fit=cover 라 페이지가 상태바 뒤까지 그린다. 스플래시가
+     inset:0 로 그 자리를 파랗게 칠하면, 홈 화면 앱에서 상태바가 파랗게 되고
+     본문(흰색)과 어긋난다. 액센트를 바꿔도 이 파랑은 안 따라오니 더 어색하다.
+     position:absolute 라 flex 항목이 되지 않아 가운데 정렬을 건드리지 않는다.
+     브라우저에서는 inset 이 0 이라 높이 0 = 보이지 않는다. */
+  #boot::before{content:'';position:absolute;top:0;left:0;right:0;
+    height:env(safe-area-inset-top,0px);background:#fff}
   /* 배경색은 스플래시 애니메이션(icons/splash.webp)의 배경과 **같은 값**이다.
      47프레임의 안쪽 배경 픽셀을 세어 최빈값으로 뽑았다: #4279B8.
      이 값이 어긋나면 파란 사각형의 경계가 눈에 보인다. 영상을 다시 만들면
      tools/make-splash.py 로 다시 재고 이 값을 같이 바꿔야 한다. */
   #boot{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:16px;background:#4279B8;margin:0;
+    align-items:center;justify-content:center;gap:11px;background:#4279B8;margin:0;
     font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}
   /* 304x328 을 102x110 로 그린다. 3배 화면에서 원본 해상도와 거의 같고(102*3=306),
      이 크기일 때 늑대가 예전 76px 아이콘 안의 늑대와 같은 크기로 보인다. */
-  #boot img{width:102px;height:110px;display:block}
-  #boot .b-nm{font-size:17px;font-weight:700;letter-spacing:-.04em;color:#fff}
+  /* 아래 음수 여백은 **그림 안의 빈 공간을 상쇄**하는 것이다.
+     splash.webp 는 늑대 아래에 16.1px(102x110 로 그릴 때) 여백을 갖고 있어서,
+     gap 만으로 맞추면 눈에 보이는 간격이 두 배가 된다. 그림을 바꾸면
+     이 값도 다시 재야 한다. */
+  #boot img{width:102px;height:110px;display:block;margin-bottom:-15px}
+  #boot .b-nm{font-family:'PyeongChang Peace',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    font-size:17px;font-weight:700;letter-spacing:-.04em;color:#fff}
   /* 로딩 서클. 한쪽만 색을 넣고 돌린다 — 테두리 하나로 끝나서 가볍다. */
   #boot .b-ring{flex:none;box-sizing:border-box;width:26px;height:26px;border-radius:50%;
     border:2.5px solid rgba(255,255,255,.34);border-top-color:#fff;

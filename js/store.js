@@ -38,6 +38,11 @@ export function applyAccent(k) {
 /** 행사 카테고리 색상 키. CSS 의 --c-* 토큰과 짝이 맞다. */
 export const CAT_COLORS = ['blue', 'green', 'amber', 'red', 'purple', 'teal', 'pink', 'gray'];
 
+/* 홈 제목의 기본값. 이 값일 때만 제목에 평창평화체를 쓰고, 사용자가
+   설정에서 바꾸면 본문 서체(프리텐다드)로 돌아간다 — 남의 단어를 남의
+   글씨체로 그리면 어울리지 않는다. 두 곳에서 봐야 하므로 상수로 둔다. */
+export const DEFAULT_HOME_TITLE = '#FursuitFryday🍤';
+
 export function emptyCatalog() {
   return {
     v: SCHEMA,
@@ -98,7 +103,7 @@ export function emptyCatalog() {
       tags: [],
       prefix: '#',
       emoji: '📷',
-      homeTitle: '#FursuitFryday🍤',
+      homeTitle: DEFAULT_HOME_TITLE,
       homeTab: '',   // 비우면 homeTitle 을 쓴다. 탭이 좁을 때 짧게 따로 정하는 칸.
       accent: 'blue', // 앱 전체 액센트. app.css 의 [data-accent] 블록과 짝.
       friday: true,   // 금요일 홈 상단 FursuitFriday 블록
