@@ -500,7 +500,11 @@ async function boot() {
   setTimeout(() => {
     // ① 한도에 걸려 비어 있던 프로필 사진 채우기
     av.backfill([...S.cat.shooters, ...S.cat.people])
-      .then(n => { if (n) { touch(); renderAll(); toast(t('avatar.got', { n: fmt(n) })); } })
+      .then(({ got, changed }) => {
+        // 실패 기록(avTry)도 저장해야 다음에 또 두드리지 않는다
+        if (changed) touch();
+        if (got) { renderAll(); toast(t('avatar.got', { n: fmt(got) })); }
+      })
       .catch(() => { /* 조용히 넘어간다 */ });
     // ② 하루 한 번 catalog 사본 남기기
     backupIfDue().catch(() => {});

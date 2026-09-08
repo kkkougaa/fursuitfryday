@@ -129,6 +129,8 @@ export const S = {
   saving: false,
   lastSaveAt: null,
   conflict: false,
+  saveError: null,      // 마지막 저장 실패. 성공하면 비운다.
+  recovered: null,      // 부팅 때 로컬에서 되살린 변경이 있었던 시각
 };
 
 /* ---------- 로드 / 저장 ---------- */
@@ -146,7 +148,21 @@ export async function load() {
   const raw = await drive.readCatalog(f.id);
   S.cat = migrate(raw);
   pCache = null;
-  return { found: true };
+
+  /* 지난번에 드라이브로 못 올린 변경이 기기에 남아 있으면 얹는다.
+     로컬을 **먼저** 읽지 않는 이유: 폰과 PC 를 같이 쓰면 옛 로컬이 다른
+     기기의 최신 변경을 통째로 덮는다. 드라이브를 읽고, 못 올린 것만
+     충돌 병합과 같은 규칙으로 얹는다. */
+  const pend = pendingLocal();
+  if (pend) {
+    const server = S.cat;
+    S.cat = migrate(pend.cat);
+    mergeInto(S.cat, server);
+    S.dirty = true;
+    S.recovered = pend.at;      // 화면에서 알려 줄 수 있게 남긴다
+    schedule(800);              // 곧 올린다
+  }
+  return { found: true, recovered: pend ? pend.at : null };
 }
 
 function migrate(raw) {
@@ -212,8 +228,10 @@ let waiters = [];
 export function touch() {
   S.dirty = true;
   pCache = null;          // 사진이 바뀌었으니 캐시를 버린다
-  clearTimeout(timer);
-  timer = setTimeout(() => { flush(); }, 2500);
+  /* 드라이브로 가기 전에 기기에 먼저 남긴다. 여기서 앱이 죽어도
+     다음에 열 때 되살릴 수 있다. */
+  saveLocal();
+  schedule(2500);
   return S.cat;
 }
 
@@ -270,21 +288,66 @@ export async function restoreBackup(id) {
   return S.cat;
 }
 
+/* ---------- 로컬 안전망 ----------
+ * 드라이브에 못 올린 변경을 기기에 남긴다. 드라이브가 진실의 원천이라는
+ * 것은 그대로다 — 이건 "아직 못 올렸다" 는 사실만 들고 있는 자리다.
+ * 올라가면 지운다. 남아 있다는 것 자체가 "복구할 것이 있다" 는 표시다.
+ */
+const LOCAL_KEY = 'cd.cat.pending';
+
+function saveLocal() {
+  try {
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({ at: Date.now(), cat: S.cat }));
+  } catch { /* 용량 초과. 드라이브 저장이 살아 있으면 문제 없다 */ }
+}
+function clearLocal() {
+  try { localStorage.removeItem(LOCAL_KEY); } catch { /* 프라이빗 모드 */ }
+}
+/** 못 올린 스냅샷. 없으면 null. */
+export function pendingLocal() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null');
+    return v && v.cat && v.cat.photos ? v : null;
+  } catch { return null; }
+}
+
+/* ---------- 저장 예약 ----------
+ * 타이머는 하나만 둔다. 여러 개를 돌리면 같은 저장이 겹쳐 들어간다.
+ * 실패하면 물러가며 다시 시도한다 — 토큰이 만료됐거나 네트워크가 끊겼을 때
+ * 사용자가 다시 뭔가를 고칠 때까지 기다리면 그 사이에 앱을 닫아 유실된다.
+ */
+let again = false;      // 저장 중에 또 바뀌었나
+let backoff = 0;
+
+function schedule(ms) {
+  clearTimeout(timer);
+  timer = setTimeout(() => { flush().catch(() => { /* 상태로 남는다 */ }); }, ms);
+}
+
 export function onSaved(fn) { waiters.push(fn); }
 const emit = () => waiters.forEach(f => f());
 
 export async function flush() {
   clearTimeout(timer);
-  if (!S.dirty || S.saving) return;
-  if (S.demo) {
-    // 데모도 저장은 해준다 — 리로드 때마다 만든 게 날아가면 볼 수가 없다.
-    try { localStorage.setItem('cd.demo.cat', JSON.stringify(S.cat)); } catch { /* 용량 초과 */ }
-    S.dirty = false; S.lastSaveAt = Date.now(); emit(); return;
-  }
+  if (!S.dirty) return;
+  /* 이미 쓰는 중이면 겹쳐 보내지 않고 표시만 남긴다. 끝난 뒤 한 번 더 쓴다 —
+     예전에는 여기서 그냥 돌아갔고, 그 변경이 아래 dirty=false 에 쓸려
+     나가 영원히 저장되지 않았다. */
+  if (S.saving) { again = true; return; }
+
   S.saving = true;
+  /* dirty 는 **쓰기 전에** 내린다. 이 뒤에 온 변경은 다시 dirty 를 세우고,
+     그건 again 과 함께 끝난 뒤 한 번 더 실린다. */
+  S.dirty = false;
+  again = false;
+  S.saveError = null;
   emit();
+
   try {
-    if (!S.catFileId) {
+    if (S.demo) {
+      // 데모도 저장은 해준다 — 리로드 때마다 만든 게 날아가면 볼 수가 없다.
+      localStorage.setItem('cd.demo.cat', JSON.stringify(S.cat));
+    } else if (!S.catFileId) {
       const r = await drive.createCatalog(S.cat);
       S.catFileId = r.id;
       S.catVersion = r.version;
@@ -292,25 +355,56 @@ export async function flush() {
       const r = await drive.writeCatalog(S.catFileId, S.cat, S.catVersion);
       S.catVersion = r.version;
     }
-    S.dirty = false;
     S.conflict = false;
     S.lastSaveAt = Date.now();
+    backoff = 0;
+    clearLocal();          // 올라갔으니 안전망을 비운다
   } catch (e) {
+    /* 못 올렸다. dirty 를 되돌리고 로컬에 남긴다 —
+       여기서 놓치면 사용자가 적은 것이 그냥 사라진다. */
+    S.dirty = true;
+    saveLocal();
     if (e.conflict) {
-      await mergeFromServer();
+      S.conflict = true;
+      try {
+        await mergeFromServer();
+        S.dirty = false;
+        S.conflict = false;
+        S.lastSaveAt = Date.now();
+        backoff = 0;
+        clearLocal();
+      } catch (e2) {
+        S.saveError = e2;
+      }
     } else {
-      throw e;
+      S.saveError = e;
     }
   } finally {
     S.saving = false;
     emit();
+    if (S.dirty) {
+      if (S.saveError) {
+        // 물러가며 다시 시도한다. 4초 → 8 → 16 … 최대 1분
+        backoff = Math.min(backoff ? backoff * 2 : 4000, 60000);
+        schedule(backoff);
+      } else {
+        again = false;
+        schedule(300);     // 저장 중에 온 변경을 바로 뒤이어 올린다
+      }
+    }
   }
 }
 
-/** 다른 기기가 먼저 저장한 경우: 서버본을 읽어 내 변경을 얹고 다시 쓴다. */
-async function mergeFromServer() {
-  const server = migrate(await drive.readCatalog(S.catFileId));
-  const mine = S.cat;
+/**
+ * 두 카탈로그를 합친다. **mine 이 이긴다** — 이미 값이 있는 칸은 그대로 두고
+ * server 는 빈 칸만 채운다. 목록은 합집합에서 묘비에 적힌 것을 걷어낸다.
+ *
+ * 두 곳에서 쓴다:
+ *  - 충돌(다른 기기가 먼저 저장) : mine=내 것, server=드라이브본
+ *  - 부팅(못 올린 로컬이 있음)   : mine=로컬본, server=드라이브본
+ * 규칙이 갈라지면 한쪽에서만 사라지는 값이 생기므로 반드시 같은 함수를 쓴다.
+ */
+function mergeInto(mine, server) {
   pCache = null;
 
   // 사진: 필드 단위로 병합. 사용 이력은 URL 기준 합집합(기록은 지우지 않는다).
@@ -365,12 +459,18 @@ async function mergeFromServer() {
   mine.dismissed = [...new Set([...server.dismissed, ...mine.dismissed])];
   mine.gone = { ...server.gone, ...mine.gone };
 
+  return mine;
+}
+
+/** 다른 기기가 먼저 저장한 경우: 서버본을 읽어 내 변경을 얹고 다시 쓴다. */
+async function mergeFromServer() {
+  const server = migrate(await drive.readCatalog(S.catFileId));
+  mergeInto(S.cat, server);
   const cur = await drive.getFile(S.catFileId, 'version');
   S.catVersion = cur.version;
-  const r = await drive.writeCatalog(S.catFileId, mine, S.catVersion);
+  const r = await drive.writeCatalog(S.catFileId, S.cat, S.catVersion);
   S.catVersion = r.version;
-  S.dirty = false;
-  S.lastSaveAt = Date.now();
+  // dirty·lastSaveAt 은 flush 가 관리한다 — 두 곳에서 만지면 어긋난다
 }
 
 function unionBy(arr, key) {

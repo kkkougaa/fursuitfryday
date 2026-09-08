@@ -1032,7 +1032,7 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 /* ---------- 퍼슈트 대장 ---------- */
 
 /* 상세 머리 — 대표 사진을 크게 보여 준다. 캐릭터를 보러 온 화면이다. */
-.suit-head{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:8px}
+.suit-head{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:8px;padding-bottom:22px}
 .suit-face{margin-bottom:14px}
 .av.xl{width:96px;height:96px;font-size:38px;letter-spacing:-.04em}
 .suit-head h2{margin:0;font-size:var(--t3);font-weight:700;letter-spacing:-.04em;line-height:var(--lh3)}

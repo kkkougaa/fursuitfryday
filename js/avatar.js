@@ -83,9 +83,10 @@ export async function backfill(list) {
   const todo = list.filter(e => e && e.x && !e.avatar && (!e.avTry || now - e.avTry > RETRY_AFTER));
   if (!todo.length) return 0;
 
-  let got = 0;
+  let got = 0, changed = 0;
   for (const e of todo) {
     const r = await fetchAvatar(e.x);
+    changed++;
     if (r.ok) {
       e.avatar = r.dataUrl;
       e.avTry = null;
@@ -96,7 +97,9 @@ export async function backfill(list) {
       if (r.reason === 'limit') break;
     }
   }
-  return got;
+  /* got 만 알려 주면 안 된다 — 실패해서 avTry 만 찍힌 경우에도 저장해야
+     6시간 백오프가 남는다. 예전에는 안 저장돼서 열 때마다 다시 두드렸다. */
+  return { got, changed };
 }
 
 /* 언어를 바꿌을 때 따라오도록 읽을 때 번역한다 (객체를 미리 굳히지 않는다) */

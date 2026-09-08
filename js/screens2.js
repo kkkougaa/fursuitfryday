@@ -535,7 +535,11 @@ function paintSettings(b) {
   const goneN = Object.keys(S.cat.gone).length;
   syb.innerHTML = `<div class="row"><span class="row-ico">${ic('cloud', 18)}</span>`
     + `<span class="grow"><span class="t">catalog.json</span><span class="d">${S.cat.syncedAt ? new Date(S.cat.syncedAt).toLocaleString(locale()) : t('set.none')}</span></span>`
-    + `<span class="n-sm">${S.dirty ? t('set.pendingSave') : S.lastSaveAt ? t('set.savedState') : ''}</span></div>`
+    /* 저장이 실패한 상태를 숨기면 사용자는 적은 것이 올라갔다고 믿는다.
+       실패는 눈에 보여야 한다 — 다시 시도는 알아서 하지만 원인은 알려 준다. */
+    + `<span class="n-sm"${S.saveError ? ' style="color:var(--red)"' : ''}>${S.saveError
+      ? t('set.saveFailed')
+      : S.dirty ? t('set.pendingSave') : S.lastSaveAt ? t('set.savedState') : ''}</span></div>`
     + (goneN ? `<div class="row"><span class="row-ico" style="background:var(--amber-fill);color:var(--amber)">${ic('info', 18)}</span>`
       + `<span class="grow"><span class="t">${t('set.goneN', { n: fmt(goneN) })}</span><span class="d">${t('set.goneDesc')}</span></span></div>` : '');
   const re = el('button', 'row', `<span class="row-ico">${ic('refresh', 18)}</span>`
