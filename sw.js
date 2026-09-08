@@ -4,7 +4,12 @@
 /* ⚠ 배포할 때마다 이 숫자를 올린다. 안 올리면 iOS 홈 화면 앱이 옛 config.js
    같은 파일을 계속 붙잡고 있어서, 코드를 고쳐도 반영이 안 된 것처럼 보인다.
    특히 스코프처럼 config 에 들어가는 값을 바꿨을 때 증상이 헷갈린다. */
-const V = 'fursuitfryday-v43';
+const V = 'fursuitfryday-v44';
+/* 스플래시 애니메이션은 **버전과 무관한** 캐시에 둔다.
+   앱 셸 캐시는 배포마다 이름이 바뀌어 통째로 버려지는데, 133KB 를 배포할
+   때마다 다시 받게 할 이유가 없다. 그림이 바뀌면 파일 이름을 바꾸면 된다. */
+const MEDIA = 'fursuitfryday-media';
+const MEDIA_RE = /\/icons\/splash\.webp$/;
 const SHELL = [
   './', './index.html', './app.css', './manifest.webmanifest',
   './js/app.js', './js/auth.js', './js/avatar.js',
@@ -14,6 +19,7 @@ const SHELL = [
   './js/store.js', './js/suggest.js', './js/suits.js', './js/thumbcache.js',
   './js/thumbs.js', './js/ui.js',
   './config.js', './icons/icon-32.png', './icons/icon-180.png', './icons/icon-192.png',
+  './icons/splash-poster.webp',
 ];
 
 self.addEventListener('install', e => {
@@ -22,7 +28,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
     const ks = await caches.keys();
-    const old = ks.filter(k => k !== V);
+    const old = ks.filter(k => k !== V && k !== MEDIA);
     await Promise.all(old.map(k => caches.delete(k)));
     await self.clients.claim();
     /* 캐시 우선이라 지금 열려 있는 화면은 옛 코드로 그려졌다.
@@ -47,6 +53,19 @@ self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
   if (u.origin !== location.origin) return;              // 구글·unavatar 는 통과
+
+  /* 스플래시 애니메이션만 따로. 한 번 받으면 배포를 건너서도 남는다. */
+  if (MEDIA_RE.test(u.pathname)) {
+    e.respondWith((async () => {
+      const c = await caches.open(MEDIA);
+      const hit = await c.match(e.request);
+      if (hit) return hit;
+      const r = await fetch(e.request).catch(() => null);
+      if (r && r.ok) c.put(e.request, r.clone());
+      return r || Response.error();
+    })());
+    return;
+  }
 
   e.respondWith((async () => {
     const cached = await caches.match(e.request, { ignoreSearch: true });

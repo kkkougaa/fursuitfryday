@@ -67,14 +67,20 @@
      box-sizing 을 직접 정하는 이유: app.css 의 * 규칙에 기대면 그 파일이
      도착하는 순간 링 크기가 튄다. */
   #boot,#boot *{box-sizing:border-box}
+  /* 배경색은 스플래시 애니메이션(icons/splash.webp)의 배경과 **같은 값**이다.
+     47프레임의 안쪽 배경 픽셀을 세어 최빈값으로 뽑았다: #4279B8.
+     이 값이 어긋나면 파란 사각형의 경계가 눈에 보인다. 영상을 다시 만들면
+     tools/make-splash.py 로 다시 재고 이 값을 같이 바꿔야 한다. */
   #boot{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:16px;background:#fff;margin:0;
+    align-items:center;justify-content:center;gap:16px;background:#4279B8;margin:0;
     font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}
-  #boot img{width:76px;height:76px;display:block}
-  #boot .b-nm{font-size:17px;font-weight:700;letter-spacing:-.04em;color:#191F28}
+  /* 304x328 을 102x110 로 그린다. 3배 화면에서 원본 해상도와 거의 같고(102*3=306),
+     이 크기일 때 늑대가 예전 76px 아이콘 안의 늑대와 같은 크기로 보인다. */
+  #boot img{width:102px;height:110px;display:block}
+  #boot .b-nm{font-size:17px;font-weight:700;letter-spacing:-.04em;color:#fff}
   /* 로딩 서클. 한쪽만 색을 넣고 돌린다 — 테두리 하나로 끝나서 가볍다. */
   #boot .b-ring{flex:none;box-sizing:border-box;width:26px;height:26px;border-radius:50%;
-    border:2.5px solid #E5E8EB;border-top-color:#3182F6;
+    border:2.5px solid rgba(255,255,255,.34);border-top-color:#fff;
     animation:bootspin .75s linear infinite}
   @keyframes bootspin{to{transform:rotate(360deg)}}
   /* 움직임을 줄이는 설정이면 천천히 돈다. 아예 멈추면 고장난 것처럼 보인다. */
@@ -82,13 +88,9 @@
     #boot .b-ring{animation-duration:2.4s}
   }
   /* JS 가 아예 못 뜬 경우. 순수 CSS 로만 나오므로 스크립트가 죽어도 보인다. */
-  #boot .b-slow{margin-top:2px;font-size:13px;font-weight:600;color:#8B95A1;
+  #boot .b-slow{margin-top:2px;font-size:13px;font-weight:600;color:rgba(255,255,255,.82);
     opacity:0;animation:bootslow .3s ease-out 10s forwards}
-  @media (prefers-color-scheme:dark){
-    #boot{background:#17171C}
-    #boot .b-nm{color:#F7F8F9}
-    #boot .b-ring{border-color:#2E2E38;border-top-color:#5A9EFF}
-  }
+  /* 다크 모드 분기는 없다 — 스플래시는 애니메이션 배경색에 맞춰 늘 파랑이다. */
   @keyframes bootslow{to{opacity:1}}
 </style>
 </head>
@@ -97,11 +99,27 @@
 <div id="app">
   <!-- 첫 페인트. JS 가 게이트나 셸을 띄우는 순간 사라진다. -->
   <div id="boot">
-    <img src="./icons/icon-180.png" alt="" width="76" height="76">
+    <!-- 즉시 그려질 정지 그림(4KB). 애니메이션의 **첫 프레임**이라서,
+         아래 스크립트가 애니메이션으로 바꿔 끼울 때 이음매가 없다. -->
+    <img id="b-art" src="./icons/splash-poster.webp" alt="" width="102" height="110" decoding="sync">
     <div class="b-nm">#FursuitFryday</div>
     <div class="b-ring"></div>
     <div class="b-slow">오래 걸리면 새로고침해 주세요</div>
   </div>
+  <script>
+    /* 애니메이션은 133KB 라 첫 페인트를 기다리게 할 수 없다. 뒤에서 받아
+       준비된 뒤에만 바꿔 끼운다. 못 받으면 정지 그림이 그대로 남는다 —
+       예전과 같은 모습이므로 후퇴가 아니다.
+       new Image() 는 낮은 우선순위로 받으므로 모듈 내려받기를 밀어내지 않는다. */
+    (function () {
+      var a = new Image();
+      a.onload = function () {
+        var e = document.getElementById('b-art');
+        if (e) e.src = a.src;      // 프레임 0 부터 재생된다
+      };
+      a.src = './icons/splash.webp';
+    })();
+  </script>
 
   <!-- 로그인 게이트 -->
   <div class="gate" id="gate" hidden></div>
