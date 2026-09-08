@@ -4,6 +4,7 @@ import {
   eventById, shooterById, personById,
   normX, touch, touchNow, markDeleted, flush, copyTextFor, channelOf, hashtagify, uid,
   unknownShooter, UNKNOWN_SHOOTER, unknownEvent, CAT_COLORS, catColor, ACCENTS, accentName, applyAccent,
+  parseHex, accentVars,
   listBackups, restoreBackup, backupIfDue,
 } from './store.js';
 import * as sug from './suggest.js';
@@ -766,19 +767,73 @@ function langSheet() {
 /* ---------- 테마 색 ---------- */
 
 function accentSheet() {
-  const cur = S.cat.opts.accent || 'blue';
+  const o = S.cat.opts;
+  const cur = o.accent || 'blue';
+  const myHex = parseHex(o.accentHex) || '#FF6B9D';
   openSheet(`<h3>${t('set.theme')}</h3><p class="lead">${t('set.themeSheetLead')}</p>`
     + `<div class="acc-grid" id="ac">`
     + ACCENTS.map(a => `<button class="acc a-${a.k}${a.k === cur ? ' on' : ''}" data-k="${a.k}">`
       + `<span class="dot">${ic('check', 16, 3)}</span><span class="nm">${esc(accentName(a.k))}</span></button>`).join('')
+    /* 아홉째 칸 — 직접 넣은 색. 점에 그 색을 그대로 보여 준다. */
+    + `<button class="acc${cur === 'custom' ? ' on' : ''}" data-k="custom">`
+      + `<span class="dot" style="background:${myHex}">${ic('check', 16, 3)}</span>`
+      + `<span class="nm">${esc(accentName('custom'))}</span></button>`
     + `</div>`);
   $('#ac').onclick = e => {
     const b = e.target.closest('[data-k]');
     if (!b) return;
-    S.cat.opts.accent = b.dataset.k;
+    if (b.dataset.k === 'custom') return customAccentSheet();
+    o.accent = b.dataset.k;
     applyAccent(b.dataset.k);
     touch();
     $('#ac').querySelectorAll('.acc').forEach(x => x.classList.toggle('on', x.dataset.k === b.dataset.k));
+    renderAll();
+  };
+}
+
+/* 컬러 코드로 테마 색을 넣는다.
+   늑대와 제목이 흰색인 스플래시에 그대로 쓰이므로, 흰 글자가 안 보일 만큼
+   밝은 색이면 알려 준다 — 막지는 않는다. 고르는 건 쓰는 사람 몫이다. */
+function customAccentSheet() {
+  const o = S.cat.opts;
+  const start = parseHex(o.accentHex) || '#FF6B9D';
+  openSheet(`<h3>${t('cac.title')}</h3><p class="lead">${t('cac.lead')}</p>`
+    + `<div class="cac-prev" id="cac-prev"><span class="cac-sw" id="cac-sw"></span>`
+      + `<span class="cac-on" id="cac-on">${t('cac.sample')}</span></div>`
+    + `<div class="fld"><label for="cac-t">${t('cac.code')}</label>`
+    + `<div class="cac-in"><input type="color" id="cac-c" value="${start}" aria-label="${t('cac.pick')}">`
+    + `<input id="cac-t" maxlength="7" value="${start}" placeholder="#3182F6" spellcheck="false"></div>`
+    + `<div class="hint" id="cac-h">${t('cac.hint')}</div></div>`
+    + `<button class="btn" id="cac-save">${t('common.save')}</button>`);
+
+  const tx = $('#cac-t'), cp = $('#cac-c'), sw = $('#cac-sw'), on = $('#cac-on'), hint = $('#cac-h');
+  let val = start;
+
+  const paint = raw => {
+    const h = parseHex(raw);
+    $('#cac-save').disabled = !h;
+    if (!h) { hint.textContent = t('cac.bad'); hint.className = 'hint warn'; return; }
+    val = h;
+    const v = accentVars(h, false);
+    sw.style.background = h;
+    on.style.background = h;
+    on.style.color = v['--on-blue'];
+    // 흰 글자가 받쳐지지 않는 색이면 알려 준다 (스플래시 제목이 흰색이다)
+    const light = v['--on-blue'] !== '#FFFFFF';
+    hint.textContent = light ? t('cac.tooLight') : t('cac.hint');
+    hint.className = 'hint' + (light ? ' warn' : '');
+  };
+  paint(start);
+
+  tx.oninput = () => { paint(tx.value); const h = parseHex(tx.value); if (h) cp.value = h; };
+  cp.oninput = () => { tx.value = cp.value.toUpperCase(); paint(cp.value); };
+  $('#cac-save').onclick = () => {
+    o.accentHex = val;
+    o.accent = 'custom';
+    applyAccent('custom', val);
+    touch();
+    closeSheet();
+    toast(t('cac.done', { hex: val }));
     renderAll();
   };
 }

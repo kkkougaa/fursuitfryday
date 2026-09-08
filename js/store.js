@@ -24,16 +24,130 @@ export const ACCENTS = [
 
 export const accentName = k => t('accent.' + k);
 
-/** 앱 전체 액센트를 문서에 적용한다. 색 정의는 CSS 가 갖고 있다. */
-export function applyAccent(k) {
-  const key = ACCENTS.some(a => a.k === k) ? k : 'blue';
-  document.documentElement.setAttribute('data-accent', key);
-  // 주소창·상태바 색도 맞춰 준다
-  requestAnimationFrame(() => {
-    const c = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
-    document.querySelectorAll('meta[name="theme-color"]').forEach(m => { if (!m.media) m.content = c; });
-  });
+/* ---------- 색 계산 (커스텀 테마용) ----------
+ * 미리 정해 둔 여덟 색은 app.css 가 --blue / --blue-press / --blue-fill /
+ * --on-blue 를 짝지어 갖고 있다. 커스텀 색은 하나만 받으니 나머지 셋을
+ * 여기서 만들어야 한다. 손으로 정한 값과 결이 같도록 맞췄다
+ * (blue #3182F6 -> press #2272EB, fill #EBF3FE, on #FFFFFF).
+ */
+export function parseHex(v) {
+  if (typeof v !== 'string') return null;
+  let h = v.trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3}$/i.test(h)) h = h.split('').map(c => c + c).join('');
+  if (!/^[0-9a-f]{6}$/i.test(h)) return null;
+  return '#' + h.toUpperCase();
 }
+const rgbOf = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const hexOf = ([r, g, b]) => '#' + [r, g, b]
+  .map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+  .join('').toUpperCase();
+
+function toHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0;
+  if (d) {
+    if (mx === r) h = ((g - b) / d + (g < b ? 6 : 0));
+    else if (mx === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  const l = (mx + mn) / 2;
+  return [h, d ? d / (1 - Math.abs(2 * l - 1)) : 0, l];
+}
+function fromHsl([h, s, l]) {
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  const t = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x]
+    : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return hexOf(t.map(v => (v + m) * 255));
+}
+/* 상대 휘도 (WCAG). 흰 글자를 얹을 수 있는지 판단한다. */
+function lum(rgb) {
+  const [r, g, b] = rgb.map(v => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+const contrast = (a, b) => {
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
+
+/** 커스텀 색 하나에서 짝이 되는 네 값을 만든다. */
+export function accentVars(hex, dark) {
+  const rgb = rgbOf(hex);
+  const [h, sat, l] = toHsl(rgb);
+  /* 글자색: **흰색을 기본으로** 하고 너무 밝은 색에서만 뒤집는다.
+     대비를 최대화하면 안 된다 — #3182F6 은 흰 글자 3.72 대 검은 글자 5.00
+     이지만 이 앱은 흰 글자를 쓴다. 미리 정해 둔 여덟 색 모두 --on-blue 가
+     흰색이고, 그중 가장 밝은 앰버(#E58A00)가 2.63 이다. 그래서 문턱을
+     2.4 로 두면 여덟 색 전부 흰 글자가 되고, 노랑처럼 더 밝은 색만
+     어두운 글자로 뒤집힌다(그때 설정 화면이 알려 준다). */
+  const on = contrast(rgb, [255, 255, 255]) >= 2.4 ? '#FFFFFF' : '#101318';
+  return {
+    '--blue': hex,
+    // 누른 상태 — 밝기만 조금 낮춘다
+    '--blue-press': fromHsl([h, sat, Math.max(0, l - 0.05)]),
+    // 옅은 배경 — 라이트는 아주 밝게, 다크는 아주 어둡게
+    '--blue-fill': dark
+      ? fromHsl([h, Math.min(sat, 0.34), 0.16])
+      : fromHsl([h, Math.min(sat, 0.92), 0.96]),
+    '--on-blue': on,
+  };
+}
+
+const isDark = () => {
+  try { return matchMedia('(prefers-color-scheme: dark)').matches; } catch { return false; }
+};
+
+/**
+ * 앱 전체 액센트를 문서에 적용한다.
+ * 미리 정해 둔 색은 CSS 가 갖고 있고(data-accent), 커스텀 색은 여기서
+ * 계산해 인라인으로 얹는다. hex 를 주면 그것이 이긴다.
+ */
+export function applyAccent(k, hex) {
+  const cust = parseHex(hex !== undefined ? hex : S.cat?.opts?.accentHex);
+  const custom = k === 'custom' && cust;
+  const key = custom ? 'custom' : (ACCENTS.some(a => a.k === k) ? k : 'blue');
+  document.documentElement.setAttribute('data-accent', key);
+
+  /* 커스텀일 때만 인라인 변수를 얹는다. 미리 정해 둔 색으로 돌아가면
+     반드시 걷어야 한다 — 남겨 두면 CSS 값을 계속 덮어쓴다. */
+  const st = document.documentElement.style;
+  const vars = ['--blue', '--blue-press', '--blue-fill', '--on-blue'];
+  if (custom) {
+    const v = accentVars(cust, isDark());
+    vars.forEach(n => st.setProperty(n, v[n]));
+  } else {
+    vars.forEach(n => st.removeProperty(n));
+  }
+  /* 예전에는 이 아래가 requestAnimationFrame 안에 있었다. 그러면 **숨은
+     탭에서는 아예 돌지 않는다** — rAF 는 그리지 않는 문서에서 멈춘다.
+     배경 탭에서 앱을 열어 두면 상태바 색도 스플래시 색도 저장되지 않았다.
+     getComputedStyle 은 방금 바꾼 속성을 반영해 동기로 계산해 주므로
+     기다릴 이유가 없다. */
+  const cs = getComputedStyle(document.documentElement);
+  // 주소창·상태바 색은 **본문 배경**을 따른다 (액센트가 아니다)
+  const bg = cs.getPropertyValue('--bg').trim();
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { if (!m.media) m.content = bg; });
+  /* 스플래시가 쓸 색을 남긴다. **이름이 아니라 계산된 색값**을 남기는
+     이유: 그래야 스플래시가 팔레트를 몰라도 되고, 커스텀 색도 그대로
+     따라온다. index.html 의 부팅 스크립트가 이 값을 읽는다. */
+  const blue = cs.getPropertyValue('--blue').trim();
+  try {
+    if (/^#[0-9a-f]{3,8}$/i.test(blue)) localStorage.setItem('cd.bootbg', blue);
+  } catch (e) { /* 무시해도 된다 */ }
+}
+
+/* 커스텀 색은 인라인 변수라 CSS 미디어 쿼리가 안 먹는다. 시스템 테마가
+   바뀌면 --blue-fill 을 다시 계산해 줘야 한다(옅은 배경의 명암이 뒤집힌다). */
+try {
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (S.cat?.opts?.accent === 'custom') applyAccent('custom');
+  });
+} catch (e) { /* 지원 안 하면 그냥 넘어간다 */ }
 
 /** 행사 카테고리 색상 키. CSS 의 --c-* 토큰과 짝이 맞다. */
 export const CAT_COLORS = ['blue', 'green', 'amber', 'red', 'purple', 'teal', 'pink', 'gray'];
@@ -101,6 +215,7 @@ export function emptyCatalog() {
       homeTitle: '#FursuitFryday🍤',
       homeTab: '',   // 비우면 homeTitle 을 쓴다. 탭이 좁을 때 짧게 따로 정하는 칸.
       accent: 'blue', // 앱 전체 액센트. app.css 의 [data-accent] 블록과 짝.
+      accentHex: '',  // accent 가 'custom' 일 때 쓰는 색. 예: '#FF6B9D'
       friday: true,   // 금요일 홈 상단 FursuitFriday 블록
     },
     rules: { camera: {} },  // { "Sony α7 IV": shooterId }  — 사용자가 "앞으로 자동" 을 켠 것만

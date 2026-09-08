@@ -66,6 +66,24 @@
 <link rel="modulepreload" href="./js/ui.js">
 <link rel="modulepreload" href="./config.js">
 
+<script>
+  /* 스플래시 색을 **#boot 이 만들어지기 전에** 정해 둔다.
+     예전에는 #boot 뒤에 있던 스크립트에서 읽었는데, 그 사이에 기본색으로
+     한 번 그려질 틈이 있었다(측정: 기본 파랑 -> 300ms 뒤 저장된 색).
+
+     받는 것은 **색 이름이 아니라 계산된 색값**이다. 그래서 여기에 팔레트를
+     베껴 둘 필요가 없고(전에는 여덟 색을 옮겨 적었다), 설정에서 넣은
+     커스텀 색도 그대로 따라온다. 값은 store.js 의 applyAccent 가 남긴다.
+     localStorage 는 동기라 네트워크를 기다리지 않는다. */
+  try {
+    var c = localStorage.getItem('cd.bootbg');
+    // 사람이 직접 고쳐 넣을 수 있는 자리이므로 모양을 확인한다
+    if (c && /^#[0-9a-f]{3,8}$/i.test(c)) {
+      document.documentElement.style.setProperty('--boot-bg', c);
+    }
+  } catch (e) { /* 사생활 보호 모드 등 — 기본색으로 간다 */ }
+</script>
+
 <!-- 첫 페인트용 스플래시. 여기 스타일을 head 에 직접 두는 이유:
      app.css 조차 기다리지 않고 HTML 이 도착하는 즉시 그려져야 한다. -->
 <style>
@@ -73,20 +91,17 @@
      box-sizing 을 직접 정하는 이유: app.css 의 * 규칙에 기대면 그 파일이
      도착하는 순간 링 크기가 튄다. */
   #boot,#boot *{box-sizing:border-box}
-  /* 상태바 자리는 흰색으로 남긴다.
-     이 앱은 viewport-fit=cover 라 페이지가 상태바 뒤까지 그린다. 스플래시가
-     inset:0 로 그 자리를 파랗게 칠하면, 홈 화면 앱에서 상태바가 파랗게 되고
-     본문(흰색)과 어긋난다. 액센트를 바꿔도 이 파랑은 안 따라오니 더 어색하다.
-     position:absolute 라 flex 항목이 되지 않아 가운데 정렬을 건드리지 않는다.
-     브라우저에서는 inset 이 0 이라 높이 0 = 보이지 않는다. */
-  #boot::before{content:'';position:absolute;top:0;left:0;right:0;
-    height:env(safe-area-inset-top,0px);background:#fff}
-  /* 배경색은 스플래시 애니메이션(icons/splash-v2.webp)의 배경과 **같은 값**이다.
-     47프레임의 안쪽 배경 픽셀을 세어 최빈값으로 뽑았다: #4279B8.
-     이 값이 어긋나면 파란 사각형의 경계가 눈에 보인다. 영상을 다시 만들면
-     tools/make-splash.py 로 다시 재고 이 값을 같이 바꿔야 한다. */
+  /* 스플래시 색은 **마지막으로 고른 앱 테마**를 따른다. 위 스크립트가
+     --boot-bg 를 꽂아 준다. 설정에서 넣은 커스텀 색도 같은 길로 온다.
+     ⚠ 늑대와 제목은 흰색이다. 그래서 여기 오는 색은 흰 글자를 받칠 수
+       있어야 한다. 미리 정해 둔 여덟 색은 모두 --on-blue 가 흰색이라
+       괜찮고, 커스텀 색은 설정 화면에서 밝은 색을 고르면 경고를 준다. */
   #boot{position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:11px;background:#4279B8;margin:0;
+    align-items:center;justify-content:center;gap:11px;margin:0;
+    /* 마지막으로 고른 테마 색. 첫 방문이면 기본 파랑. */
+    background:var(--boot-bg,#3182F6);
+    /* screen 합성이 페이지 바깥으로 새지 않게 가둔다 */
+    isolation:isolate;
     font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}
   /* 304x328 을 102x110 로 그린다. 3배 화면에서 원본 해상도와 거의 같고(102*3=306),
      이 크기일 때 늑대가 예전 76px 아이콘 안의 늑대와 같은 크기로 보인다. */
@@ -94,7 +109,13 @@
      splash.webp 는 늑대 아래에 16.1px(102x110 로 그릴 때) 여백을 갖고 있어서,
      gap 만으로 맞추면 눈에 보이는 간격이 두 배가 된다. 그림을 바꾸면
      이 값도 다시 재야 한다. */
-  #boot img{width:102px;height:110px;display:block;margin-bottom:-15px}
+  /* 늑대는 **흰색/순수 검정**으로 구워져 있다. screen 합성은 검정 위에서
+     `배경 + (1-배경)x원본` 과 수식이 정확히 같아서, 검정이 투명처럼 빠지고
+     흰 늑대만 남으며 경계의 부드러움까지 그대로 맞는다. 덕분에 테마가
+     여덟 개여도 그림은 한 벌이면 된다(압축 잡음으로 배경이 최대 0.8%
+     들뜨는데 눈에 보이지 않는다). */
+  #boot img{width:102px;height:110px;display:block;margin-bottom:-15px;
+    mix-blend-mode:screen}
   #boot .b-nm{font-size:17px;font-weight:700;letter-spacing:-.04em;color:#fff}
   /* 로딩 서클. 한쪽만 색을 넣고 돌린다 — 테두리 하나로 끝나서 가볍다. */
   #boot .b-ring{flex:none;box-sizing:border-box;width:26px;height:26px;border-radius:50%;
@@ -119,19 +140,19 @@
   <div id="boot">
     <!-- 즉시 그려질 정지 그림(4KB). 애니메이션의 **첫 프레임**이라서,
          아래 스크립트가 애니메이션으로 바꿔 끼울 때 이음매가 없다. -->
-    <img id="b-art" src="./icons/splash-v2-first.webp" alt="" width="102" height="110" decoding="sync">
+    <img id="b-art" src="./icons/splash-v4-first.webp" alt="" width="102" height="110" decoding="sync">
     <div class="b-nm">#FursuitFryday</div>
     <div class="b-ring"></div>
     <div class="b-slow">오래 걸리면 새로고침해 주세요</div>
   </div>
   <script>
-    /* 애니메이션은 91KB 라 첫 페인트를 기다리게 할 수 없다. 뒤에서 받아
+    /* 애니메이션은 87KB 라 첫 페인트를 기다리게 할 수 없다. 뒤에서 받아
        준비된 뒤에만 바꿔 끼운다. 못 받으면 첫 프레임 정지 그림이 그대로
        남는다 — 예전과 같은 모습이므로 후퇴가 아니다.
        new Image() 는 낮은 우선순위로 받으므로 모듈 내려받기를 밀어내지 않는다. */
     (function () {
       var el = document.getElementById('b-art');
-      var last = './icons/splash-v2-last.webp';
+      var last = './icons/splash-v4-last.webp';
       var a = new Image();
       a.onload = function () {
         if (!el) return;
@@ -145,7 +166,7 @@
         setTimeout(function () { if (el) el.src = last; }, 2200);
       };
       new Image().src = last;              // 바꿔 끼울 때 깜빡이지 않게 미리 받는다
-      a.src = './icons/splash-v2.webp';
+      a.src = './icons/splash-v4.webp';
     })();
   </script>
 
