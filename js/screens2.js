@@ -195,7 +195,7 @@ function assignRow(label, value, icon, onClick, sub) {
   const r = el('button', 'row');
   const has = !!value;
   r.innerHTML = `<span class="row-ico"${has ? '' : ' style="background:var(--amber-fill);color:var(--amber)"'}>${ic(icon, 18)}</span>`
-    + `<span class="grow"><span class="t"${has ? '' : ' style="color:var(--amber)"'}>${has ? esc(value) : `${label} 지정하기`}</span>`
+    + `<span class="grow"><span class="t"${has ? '' : ' style="color:var(--amber)"'}>${has ? esc(value) : esc(t('assign.setLabel', { label }))}</span>`
     + `<span class="d${sub ? ' x' : ''}">${sub ? esc(sub) : label}</span></span><span class="chev">${ic('chev', 18, 2.1)}</span>`;
   r.onclick = onClick;
   return r;
@@ -300,7 +300,7 @@ export async function useSheet(id, after) {
     + `<span class="lb">${t('use.block')}</span>`
     + `<span class="sm">${p.w ? `${fmt(p.w)} × ${fmt(p.h)}` : ''}</span></div>`
     + `<div class="cpimg"><img class="sk" style="aspect-ratio:3/2" alt=""></div>`
-    + `<pre class="pv">${esc(txt)}</pre></div>`
+    + `<pre class="pv" data-empty="${esc(t('ph.pvEmpty'))}">${esc(txt)}</pre></div>`
     + `<button class="btn" id="c-copy" style="margin-top:12px">${ic('copy', 18, 2.2)}${t('use.copyBoth')}</button>`
     + `<div class="splitrow"><button id="c1b">${t('use.photoOnly')}</button><button id="c2b">${t('use.textOnly')}</button></div>`
     + `<button class="optlink" id="c-opt">${t('use.editOpts')}${ic('chev', 15, 2.2)}</button>`
@@ -343,7 +343,7 @@ export async function useSheet(id, after) {
 
 export function usageSheet(ids, after) {
   const today = new Date().toISOString().slice(0, 10);
-  openSheet(`<h3>${t('use.recTitle')}</h3><p class="lead">${ids.length > 1 ? `${fmt(ids.length)}장을 같은 게시물에 쓴 것으로 기록해요.` : t('use.recLeadOne')}</p>`
+  openSheet(`<h3>${t('use.recTitle')}</h3><p class="lead">${ids.length > 1 ? t('use.recLeadMany', { n: fmt(ids.length) }) : t('use.recLeadOne')}</p>`
     + `<div class="fld"><label for="u-url">${t('use.url')}</label>`
     + `<input id="u-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://www.instagram.com/p/...">`
     + `<div class="detect" id="u-det">${t('use.detectHint')}</div></div>`
@@ -436,8 +436,15 @@ function paintTags(b) {
 
 /* ============================ 설정 ============================ */
 
+/* 설정은 이제 탭이 아니라 프로필 탭에서 들어가는 push 화면이다.
+   컨테이너에 id 를 박아 두어야 저장 후 다시 그릴 때 찾을 수 있다. */
+export function openSettings() {
+  push(t('tab.settings'), sc => { sc.id = 'settings-body'; paintSettings(sc); });
+}
+
+/** 열려 있을 때만 다시 그린다. 닫혀 있으면 아무 일도 하지 않는다. */
 export function renderSettings() {
-  const b = $('#set-body');
+  const b = $('#settings-body');
   if (!b) return;
   keepScroll(b, () => paintSettings(b));
 }
@@ -446,42 +453,7 @@ function paintSettings(b) {
   b.innerHTML = '';
   const all = photos();
 
-  /* 내 프로필 */
-  const me = S.cat.me || {};
-  const mp = el('div', 'sec');
-  const mlb = el('div', 'sec-lb', `<h2>${t('set.myProfile')}</h2>`);
-  mlb.style.marginTop = '4px';
-  mp.appendChild(mlb);
-  const mbox = el('div', 'card');
-  if (me.nick || me.x) {
-    const r = el('button', 'row');
-    r.innerHTML = avatarHTML(me.nick || me.x || '?', me.avatar)
-      + `<span class="grow"><span class="t">${esc(me.nick || me.x)}</span>`
-      + `<span class="d${me.x ? ' x' : ''}">${me.x ? '@' + esc(me.x) : t('common.noXId')}</span></span>`;
-    if (me.x) {
-      const go = el('span', 'copy', `${ic('ext', 15, 2)}X`);
-      r.appendChild(go);
-      r.onclick = () => openX(me.x);
-      r.setAttribute('aria-label', t('set.openX', { x: me.x }));
-    } else {
-      r.appendChild(el('span', 'chev', ic('chev', 18, 2.1)));
-      r.onclick = () => meSheet();
-    }
-    mbox.appendChild(r);
-    const ed = el('button', 'row', `<span class="row-ico">${ic('user', 18)}</span>`
-      + `<span class="grow"><span class="t">${t('set.profileEdit')}</span><span class="d">${t('set.profileEditDesc')}</span></span>`
-      + `<span class="chev">${ic('chev', 18, 2.1)}</span>`);
-    ed.onclick = () => meSheet();
-    mbox.appendChild(ed);
-  } else {
-    const r = el('button', 'row', `<span class="row-ico" style="background:var(--blue-fill);color:var(--blue)">${ic('user', 18)}</span>`
-      + `<span class="grow"><span class="t" style="color:var(--blue)">${t('set.profileSetup')}</span></span>`
-      + `<span class="chev">${ic('chev', 18, 2.1)}</span>`);
-    r.onclick = () => meSheet();
-    mbox.appendChild(r);
-  }
-  mp.appendChild(mbox);
-  b.appendChild(mp);
+  /* 내 프로필은 프로필 탭으로 옮겼다 — 여기는 설정만 남는다. */
 
   /* 표시 */
   const dp = el('div', 'sec');
@@ -721,7 +693,7 @@ function paintEntityList(sc, kind, label) {
 
 /* ---------- 내 프로필 ---------- */
 
-function meSheet() {
+export function meSheet() {
   const me = S.cat.me || (S.cat.me = { nick: '', x: null, avatar: null });
   openSheet(`<h3>${t('me.title')}</h3><p class="lead">${t('me.lead')}</p>`
     + `<div class="fld"><label for="me-nick">${t('me.nick')}</label>`
@@ -1213,6 +1185,7 @@ function paintCopyOptions(sc) {
   s4.appendChild(el('div', 'sec-lb', `<h2>${t('cp.preview')}</h2>`));
   const sample = photos().find(p => p.shooter && shooterById(p.shooter)?.x) || photos()[0];
   const pv = el('pre', 'pv', esc(sample ? copyTextFor(sample) : o.tags.join(' ')));
+  pv.setAttribute('data-empty', t('ph.pvEmpty'));
   pv.style.background = 'var(--fill-2)';
   s4.appendChild(pv);
   sc.appendChild(s4);

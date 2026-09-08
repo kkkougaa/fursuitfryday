@@ -18,9 +18,10 @@ import { S, touch, touchNow, markDeleted, addEvent, photos, uid, catColor, shoot
 import * as th from './thumbs.js';
 import {
   $, el, ic, esc, fmt, push, popAll, openSheet, closeSheet,
-  toast, confirmSheet, wireScroll, keepScroll, segment, flipSwitch,
+  toast, confirmSheet, wireScroll, keepScroll, segment, flipSwitch, icFill,
 } from './ui.js';
 import { V, NO_FILTER, goTab, renderAll, renderHome, assignSheet, reviewSheet } from './screens.js';
+import { suitById, tagEventSuit, onlySuit, addTodo, todoSorted } from './store.js';
 import { catSheet, logoSheet } from './screens2.js';
 import { avatarHTML } from './ui.js';
 import { t } from './i18n.js';
@@ -97,9 +98,15 @@ export function nextEvent() {
 
 export const prepDone = e => (e.prep || []).filter(x => x.done).length;
 export const packDone = e => (e.packed || []).filter(id => S.cat.packing.some(p => p.id === id)).length;
+/**
+ * 행사별 준비 진행률. **짐 챙기기는 세지 않는다.**
+ * 짐 목록은 모든 행사에 공통이라 여기 섞으면, 그 행사에 아무것도 안 적은
+ * 사람에게도 모든 행사가 "0/8" 로 보인다 — 준비할 게 있는 것처럼.
+ * 짐 진행률은 체크리스트 화면에서 따로 보여 준다.
+ */
 export function progress(e) {
-  const total = (e.prep || []).length + S.cat.packing.length;
-  const done = prepDone(e) + packDone(e);
+  const total = (e.prep || []).length;
+  const done = prepDone(e);
   return { done, total, pct: total ? Math.round((done / total) * 100) : 0 };
 }
 
@@ -151,7 +158,7 @@ function subViewSheet(e, x) {
     + (x.place ? `<div><dt>${t('sched.where')}</dt><dd>${esc(x.place)}</dd></div>` : '')
     + `</dl>`
     + (x.note
-      ? `<div class="fld" style="margin-top:14px"><label>${t('sched.memo')}</label><pre class="pv">${esc(x.note)}</pre></div>`
+      ? `<div class="fld" style="margin-top:14px"><label>${t('sched.memo')}</label><pre class="pv" data-empty="${esc(t('ph.pvEmpty'))}">${esc(x.note)}</pre></div>`
       : `<div class="note" style="margin-top:14px">${ic('info', 17)}<span>${t('sched.noMemo')}</span></div>`)
     + `<button class="btn" id="sv-edit" style="margin-top:16px">${ic('cal', 18, 2.1)}${t('sched.edit')}</button>`
     + `<button class="btn sub" id="sv-go" style="width:100%;margin-top:8px">${ic('chev', 17, 2.2)}${t('sched.openEvent')}</button>`);
@@ -229,7 +236,27 @@ function wireExpand(key, host, panel, btn) {
     setPanel(panel, on);
     host.classList.toggle('open', on);
   };
-  requestAnimationFrame(apply);
+
+  /* 처음 그릴 때는 상태만 맞추고 애니메이션은 돌리지 않는다.
+     다시 그리면 패널이 CSS 기본값(max-height:0)으로 새로 생기는데, 거기서
+     전환이 시작되면 펼쳐 둔 목록이 접혔다 펴지는 것처럼 보인다. */
+  if (open.has(key)) {
+    /* 높이는 다음 프레임에 넣는다. todoBlock() 처럼 문서에 붙기 전에
+       불리는 경우가 있는데, 떼어진 요소의 scrollHeight 는 0 이라
+       그대로 재면 펼친 것이 접혀 버린다. */
+    host.classList.add('no-anim');
+    panel.classList.add('no-anim');
+    requestAnimationFrame(() => {
+      apply();
+      requestAnimationFrame(() => {
+        host.classList.remove('no-anim');
+        panel.classList.remove('no-anim');
+      });
+    });
+  } else {
+    apply();          // 이미 접힌 상태라 시각 변화가 없다
+  }
+
   btn.onclick = ev => {
     ev.stopPropagation();
     open.has(key) ? open.delete(key) : open.add(key);
@@ -312,6 +339,7 @@ export function renderSchedule() {
 
 function paintSchedule(sc) {
   sc.innerHTML = '';
+
   /* "행사 미상" 은 일정이 아니다 — 사진을 모아 두는 자리라 날짜가 없다.
      걸러 내지 않으면 날짜 미정 목록에 계속 끼어 있는다. */
   const all = [...S.cat.events].filter(e => !e.unknown);
@@ -325,6 +353,13 @@ function paintSchedule(sc) {
   top.style.paddingTop = '2px';
   top.appendChild(ddayCard());
   sc.appendChild(top);
+
+  /* 다음 행사 바로 아래. 접힌 채로 두고 남은 개수만 보여 준다.
+     .sec 로 감싸야 좌우 여백이 다른 카드들과 맞는다. */
+  const tw = el('div', 'sec');
+  tw.style.marginTop = '10px';
+  tw.appendChild(todoBlock());
+  sc.appendChild(tw);
 
   /* 다가오는 일정 — 헤더 옆에서 카테고리로 걸러 본다 */
   if (up.length) {
@@ -384,6 +419,43 @@ function paintSchedule(sc) {
   wireScroll();
 }
 
+/* 이 행사에 데려간 퍼슈트를 고른다.
+ *
+ * 슈트가 하나뿐이면 고를 것이 없으므로 바로 켠다 — 이 경우 사용자는
+ * 이 시트를 볼 일이 없다(위에서 곧바로 붙이는 버튼만 나온다). */
+function broughtSheet(e, after) {
+  const live = S.cat.suits.filter(x => !x.retiredAt);
+  let picked = new Set(e.suits || []);
+
+  const render = () => {
+    const rows = live.map(x => {
+      const on = picked.has(x.id);
+      return `<button class="opt${on ? ' on' : ''}" data-id="${x.id}">`
+        + `<span class="l">${esc(x.name)}</span>`
+        + `<span class="c">${ic('check', 18, 2.8)}</span></button>`;
+    }).join('');
+    openSheet(`<h3>${t('esuit.sheetTitle')}</h3><p class="lead">${t('esuit.sheetLead')}</p>`
+      + `<div class="opts" id="bs">${rows}</div>`
+      + `<button class="btn" id="bs-save">${t('common.save')}</button>`);
+
+    $('#bs').querySelectorAll('[data-id]').forEach(b => {
+      b.onclick = () => {
+        const k = b.dataset.id;
+        if (picked.has(k)) picked.delete(k); else picked.add(k);
+        render();
+      };
+    });
+    $('#bs-save').onclick = () => {
+      e.suits = live.filter(x => picked.has(x.id)).map(x => x.id);
+      touch();
+      closeSheet();
+      after?.();
+      renderAll();
+    };
+  };
+  render();
+}
+
 function catPickSheet(apply) {
   const pool = S.cat.eventTags;
   openSheet(`<h3>${t('sched.byCategory')}</h3><p class="lead">${t('sched.byCategoryLead')}</p><div class="opts" id="cp"></div>`
@@ -401,6 +473,18 @@ function catPickSheet(apply) {
 }
 
 /** 행 + (약속이 있으면) 접었다 펼 수 있는 패널 */
+/* 준비 진행바. 다가오는 행사에만 붙인다 — 지난 행사에 준비율을 보여 줄
+   이유가 없다. 다 하면 숫자 대신 "준비 완료" 로 바뀐다. */
+function prepBar(e, upcoming) {
+  if (!upcoming) return '';
+  const pg = progress(e);
+  if (!pg.total) return '';
+  const all = pg.done === pg.total;
+  return `<span class="evpg${all ? ' all' : ''}">`
+    + `<span class="bar"><i style="width:${pg.pct}%"></i></span>`
+    + `<span class="pgl">${all ? t('sched.prepAll') : `${pg.done}/${pg.total}`}</span></span>`;
+}
+
 function eventBlock(e, upcoming) {
   const list = photos().filter(p => p.event === e.id);
   const d = ddayLabel(e);
@@ -430,25 +514,133 @@ function eventBlock(e, upcoming) {
     + `<span class="grow"><span class="nm">${live ? '<i class="live-dot"></i>' : ''}${esc(e.name)}</span>`
     + `<span class="m">${esc(meta)}</span>`
     + (chips ? `<span class="tt">${chips}</span>` : '')
+    + prepBar(e, upcoming)
     + `</span>`
     + `<span class="dd"><b>${d.big}</b><i>${esc(d.sub)}</i></span>`;
   body.onclick = () => openEvent(e.id);
   r.appendChild(body);
   wrap.appendChild(r);
 
-  if (sl.length) {
-    const exp = el('button', 'exp');
-    exp.setAttribute('aria-label', t('sched.openSub'));
-    exp.innerHTML = ic('chev', 18, 2.4);
-    r.appendChild(exp);
+  /* 펼치면 약속과 체크리스트로 가는 길. 약속이 없어도 체크리스트는 있으니
+     패널은 늘 만든다 — 예전에는 약속이 없으면 펼칠 수조차 없었다. */
+  const exp = el('button', 'exp');
+  exp.setAttribute('aria-label', t('sched.openSub'));
+  exp.innerHTML = ic('chev', 18, 2.4);
+  r.appendChild(exp);
 
-    const panel = el('div', 'evpanel');
-    const inner = el('div', 'evpanel-in');
-    sl.forEach(x => inner.appendChild(subRow(e, x)));
-    panel.appendChild(inner);
-    wrap.appendChild(panel);
-    wireExpand(e.id, r, panel, exp);
+  const panel = el('div', 'evpanel');
+  const inner = el('div', 'evpanel-in');
+  sl.forEach(x => inner.appendChild(subRow(e, x)));
+
+  const pg = progress(e);
+  const ckBtn = el('button', 'panel-btn', `${ic('check', 15, 2.4)}${t('sched.checklist')}`
+    + `<span class="rt">${pg.total ? `${pg.done}/${pg.total}` : t('sched.setup')}</span>${ic('chev', 15, 2.2)}`);
+  ckBtn.onclick = () => openChecklist(e.id);
+  inner.appendChild(ckBtn);
+
+  panel.appendChild(inner);
+  wrap.appendChild(panel);
+  wireExpand(e.id, r, panel, exp);
+  return wrap;
+}
+
+/* ---------- 할 일 ---------- */
+
+/* 행사에 묶이지 않은 할 일 + 행사 체크리스트에서 핀을 꽂은 항목.
+ * 접어 두는 이유: 일정 화면의 주인공은 행사고, 할 일은 곁들이는 쪽이다.
+ * 접혀 있어도 남은 개수는 보이니 놓치지 않는다. */
+/* 할 일 블록만 갈아 끼운다.
+ * 항목 하나를 지우려고 renderSchedule() 을 부르면 일정 목록 전체가 다시
+ * 그려져 .stagger 의 페이드가 통째로 재생된다 — 사진 탭의 묶음 접기를
+ * 제자리에서 처리하는 것과 같은 이유다. */
+function repaintTodo() {
+  const cur = $('#todo-block');
+  if (!cur) { renderSchedule(); return; }
+  cur.replaceWith(todoBlock());
+}
+
+function todoBlock() {
+  const list = todoSorted();
+  const left = list.filter(x => !x.it.done).length;
+
+  const wrap = el('div', 'evwrap');
+  wrap.id = 'todo-block';
+  const r = el('div', 'ev todo-hd');
+  const body = el('button', 'ev-main');
+  body.innerHTML = `<span class="grow"><span class="nm">${t('todo.sec')}</span>`
+    + `<span class="m">${list.length
+      ? (left ? t('todo.leftN', { n: fmt(left) }) : t('todo.allDone'))
+      : t('todo.none')}</span></span>`;
+  const exp = el('button', 'exp');
+  exp.setAttribute('aria-label', t('todo.sec'));
+  exp.innerHTML = ic('chev', 18, 2.4);
+  // 머리를 눌러도 펼쳐진다 — 여기엔 들어갈 상세 화면이 없다
+  body.onclick = () => exp.click();
+  r.appendChild(body);
+  r.appendChild(exp);
+  wrap.appendChild(r);
+
+  const panel = el('div', 'evpanel');
+  const inner = el('div', 'evpanel-in');
+
+  const add = el('div', 'addrow');
+  add.innerHTML = `<input id="td-in" maxlength="60" placeholder="${t('todo.ph')}">`;
+  const ab = el('button', '', t('common.add'));
+  const submit = () => {
+    const v = $('#td-in').value.trim();
+    if (!v) return;
+    addTodo(v);
+    open.add('todo');            // 추가한 것이 바로 보이게 펼친 상태를 유지한다
+    repaintTodo();
+  };
+  ab.onclick = submit;
+  add.appendChild(ab);
+  inner.appendChild(add);
+
+  list.forEach(({ it, ev }) => {
+    const row = el('button', 'ck-row' + (it.done ? ' on' : ''),
+      `<span class="ck-box">${ic('check', 14, 3)}</span>`
+      + `<span class="tx">${esc(it.text)}`
+      + (ev ? `<span class="src">${esc(ev.name)}</span>` : '') + `</span>`);
+    row.onclick = () => {
+      it.done = !it.done;
+      touch();
+      open.add('todo');
+      /* 핀 꽂은 행사 항목을 체크하면 그 행사의 준비 진행바도 따라와야 해서
+         일정까지 다시 그린다. 행사 없는 할 일은 블록만 갈아 끼운다. */
+      if (ev) renderSchedule(); else repaintTodo();
+    };
+    /* 행사 항목은 여기서 지우지 않는다 — 원본은 그 행사 체크리스트에 있고,
+       여기서 지우면 어느 쪽이 사라진 것인지 헷갈린다. 핀만 뗀다. */
+    const off = el('span', 'del', ev ? icFill('bookmark', 16) : ic('x', 15, 2.4));
+    off.setAttribute('aria-label', t(ev ? 'todo.unpin' : 'common.delete'));
+    if (ev) off.classList.add('on');
+    off.onclick = e2 => {
+      e2.stopPropagation();
+      if (ev) {
+        it.pin = false;
+        touch();
+        toast(t('todo.unpinned'));
+      } else {
+        S.cat.todos = S.cat.todos.filter(z => z.id !== it.id);
+        markDeleted('todos', it.id);
+        touchNow();
+      }
+      open.add('todo');
+      repaintTodo();
+    };
+    row.appendChild(off);
+    inner.appendChild(row);
+  });
+
+  if (!list.length) {
+    inner.appendChild(el('div', 'ck-row',
+      `<span class="tx" style="color:var(--g500);font-weight:600">${t('todo.empty')}</span>`));
   }
+
+  panel.appendChild(inner);
+  wrap.appendChild(panel);
+  wireExpand('todo', r, panel, exp);
   return wrap;
 }
 
@@ -643,6 +835,91 @@ function paint(sc, e, id) {
     sc.appendChild(ss2);
   }
 
+  /* 데려간 퍼슈트.
+   *
+   * 여기가 캐릭터를 사진에 붙이는 자리다. 사진 지정 화면에 캐릭터를 끼우지
+   * 않는 이유: "지금 어느 캐릭터인지" 를 전역으로 들고 있으면 한 번 잊는
+   * 순간 수십 장이 잘못 붙는다. 반면 "이 행사에 무엇을 데려갔나" 는 사람이
+   * 실제로 기억하는 단위이고, 하나만 데려갔으면 물어볼 것이 아예 없다. */
+  if (S.cat.suits.length) {
+    const brought = (e.suits || []).map(suitById).filter(Boolean);
+    const evIds = photos().filter(p => p.event === e.id).map(p => p.id);
+
+    const my = el('div', 'sec');
+    const mlb = el('div', 'sec-lb', `<h2>${t('esuit.sec')}</h2>`);
+    const pick = el('button', 'catpick' + (brought.length ? ' on' : ''),
+      brought.length ? `${t('esuit.change')}${ic('chev', 13, 2.4)}` : `${t('esuit.pick')}${ic('plus', 13, 2.6)}`);
+    pick.onclick = () => broughtSheet(e, () => paint(sc, e, id));
+    mlb.appendChild(pick);
+    my.appendChild(mlb);
+
+    if (!brought.length) {
+      my.appendChild(el('div', 'note', `${ic('info', 17)}<span>${t('esuit.lead')}</span>`));
+    } else {
+      const box = el('div', 'card');
+      brought.forEach(x => {
+        const mine = evIds.filter(pid => (S.cat.photos[pid]?.people || []).includes(x.personId));
+        const r = el('button', 'row');
+        r.innerHTML = avatarHTML(x.name, x.avatar)
+          + `<span class="grow"><span class="t">${esc(x.name)}</span>`
+          + `<span class="d">${mine.length
+            ? t('esuit.taggedN', { n: fmt(mine.length), all: fmt(evIds.length) })
+            : t('esuit.none')}</span></span>`
+          + `<span class="chev">${ic('chev', 18, 2.1)}</span>`;
+        r.onclick = () => {
+          if (!evIds.length) { toast(t('esuit.noPhotos')); return; }
+          /* 아닌 것을 빼는 화면을 그대로 쓴다. 이미 이 캐릭터로 붙은 사진은
+             처음부터 켜져 있어야 해서 미리 고른 상태로 넘긴다. */
+          reviewSheet({
+            title: esc(x.name),
+            ids: evIds,
+            /* 격자는 **지금 상태를 그대로** 비춘다. 아직 아무것도 안 붙은
+               캐릭터를 전부 켜진 채로 열면, 무심코 한 번 눌러 두 캐릭터가
+               같은 사진에 다 붙는다. 비어 있으면 사용자가 고르게 두고,
+               전부 맞을 때는 시트 안의 "전체 켜기" 한 번이면 된다. */
+            preset: mine,
+            okKey: 'esuit.apply',
+            onApply: keep => {
+              // 다시 고른 결과를 그대로 반영한다 — 뺀 것은 뺀다
+              evIds.forEach(pid => {
+                const ph = S.cat.photos[pid];
+                if (!ph) return;
+                const has = (ph.people || []).includes(x.personId);
+                const want = keep.includes(pid);
+                if (want && !has) ph.people = [...(ph.people || []), x.personId];
+                if (!want && has) ph.people = ph.people.filter(z => z !== x.personId);
+              });
+              touch();
+              toast(t('esuit.applied', { name: esc(x.name), n: fmt(keep.length) }));
+              paint(sc, e, id);
+              renderAll();
+            },
+          });
+        };
+        box.appendChild(r);
+      });
+      my.appendChild(box);
+
+      /* 하나만 데려갔고 아직 아무 사진에도 안 붙었으면, 한 번 눌러 끝낸다. */
+      if (brought.length === 1 && evIds.length) {
+        const only = brought[0];
+        const untagged = evIds.filter(pid => !(S.cat.photos[pid]?.people || []).includes(only.personId));
+        if (untagged.length) {
+          const all = el('button', 'btn sub', `${ic('check', 17, 2.2)}${t('esuit.allOne', { name: esc(only.name), n: fmt(untagged.length) })}`);
+          all.style.cssText = 'width:100%;margin-top:10px';
+          all.onclick = () => {
+            const done = tagEventSuit(e.id, only, untagged);
+            toast(t('esuit.applied', { name: esc(only.name), n: fmt(done) }));
+            paint(sc, e, id);
+            renderAll();
+          };
+          my.appendChild(all);
+        }
+      }
+    }
+    sc.appendChild(my);
+  }
+
   /* 사진 */
   const ps = el('div', 'sec');
   ps.appendChild(el('div', 'sec-lb', `<h2>${t('sched.thisEventPhotos')}</h2><span class="n">${t('common.photoN', { n: fmt(n) })}</span>`));
@@ -833,11 +1110,25 @@ function paintChecklist(sc, id) {
     const b1 = el('div', 'card');
     prep.forEach(item => {
       const r = el('button', 'ck-row' + (item.done ? ' on' : ''), `<span class="ck-box">${ic('check', 14, 3)}</span><span class="tx">${esc(item.text)}</span>`);
+      /* 핀을 꽂으면 일정 화면의 할 일 목록에도 뜬다. 원본을 그대로 쓰므로
+         어느 쪽에서 체크해도 같이 바뀐다. */
+      const pin = el('span', 'del' + (item.pin ? ' on' : ''),
+        item.pin ? icFill('bookmark', 16) : ic('bookmark', 15, 2.2));
+      pin.setAttribute('aria-label', t(item.pin ? 'todo.unpin' : 'todo.pin'));
+      pin.onclick = ev => {
+        ev.stopPropagation();
+        item.pin = !item.pin;
+        touch();
+        toast(t(item.pin ? 'todo.pinned' : 'todo.unpinned'));
+        paintChecklist(sc, id);
+        renderAll();
+      };
+      r.appendChild(pin);
       const del = el('span', 'del', ic('x', 15, 2.4));
       del.onclick = ev => {
         ev.stopPropagation();
         e.prep = prep.filter(x => x.id !== item.id);
-        touch(); paintChecklist(sc, id);
+        touch(); paintChecklist(sc, id); renderAll();
       };
       r.appendChild(del);
       r.onclick = () => { item.done = !item.done; touch(); paintChecklist(sc, id); renderAll(); };

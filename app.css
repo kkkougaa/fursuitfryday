@@ -860,7 +860,8 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .cphead .lb{flex:1;min-width:0;font-size:var(--t6);font-weight:700;letter-spacing:-.03em}
 .cphead .sm{flex:none;font-size:var(--t8);font-weight:600;color:var(--g500);letter-spacing:-.02em}
 .pv{margin:10px 0 0;padding:13px 14px;background:var(--bg);border-radius:12px;font-family:var(--f);font-size:var(--t7);font-weight:600;line-height:1.7;letter-spacing:-.02em;white-space:pre-wrap;word-break:break-word}
-.pv:empty::before{content:"복사할 텍스트가 없어요";color:var(--g400);font-weight:500}
+/* 글자를 CSS 에 박으면 번역이 안 된다 — 만드는 쪽에서 data-empty 로 넣는다. */
+.pv:empty::before{content:attr(data-empty);color:var(--g400);font-weight:500}
 .cpimg{margin-top:10px}
 .cpimg img{width:100%;aspect-ratio:3/2;object-fit:cover;border-radius:12px;display:block;background:var(--fill-3)}
 .optlink{display:flex;align-items:center;justify-content:center;gap:3px;width:100%;padding:15px 0 5px;font-size:var(--t7);font-weight:700;color:var(--blue);letter-spacing:-.03em}
@@ -940,6 +941,9 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .ev .exp:active{background:var(--tap)}
 
 .evpanel{max-height:0;overflow:hidden;transition:max-height var(--d-3) var(--e-out)}
+/* 다시 그린 직후 한 프레임. 펼쳐 둔 것의 높이를 애니메이션 없이 맞춘 뒤
+   바로 떼어내므로, 이후 사용자 조작에는 전환이 그대로 남는다. */
+.no-anim, .no-anim *{transition:none !important;animation:none !important}
 .evpanel-in{padding:2px 12px 12px;display:flex;flex-direction:column;gap:1px}
 
 /* 행사 안의 약속 */
@@ -1009,6 +1013,51 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .ck-head .pg span.all{color:var(--green)}
 
 /* ---------- 노트 / 토스트 / 스켈레톤 ---------- */
+/* 핀 꽂은 항목이 어느 행사 것인지. 취소선이 여기까지 내려오면
+   행사 이름이 지워진 것처럼 보이므로 빼 준다. */
+.ck-row .tx .src{display:block;margin-top:2px;font-size:var(--t9);font-weight:600;color:var(--g500);letter-spacing:-.02em;text-decoration:none}
+.ck-row.on .tx .src{opacity:.8}
+
+/* 꽂혀 있는 핀 */
+.ck-row .del.on{color:var(--blue)}
+
+/* 행사 줄의 준비 진행바. 한눈에 보는 용도라 숫자는 작게 곁들인다. */
+.evpg{display:flex;align-items:center;gap:7px;margin-top:7px}
+.evpg .bar{flex:1;min-width:0;height:5px;border-radius:6px}
+.evpg .pgl{flex:none;font-size:var(--t9);font-weight:700;color:var(--g500);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.evpg.all .bar i{background:var(--green)}
+.evpg.all .pgl{color:var(--green)}
+
+
+/* ---------- 퍼슈트 대장 ---------- */
+
+/* 상세 머리 — 대표 사진을 크게 보여 준다. 캐릭터를 보러 온 화면이다. */
+.suit-head{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:8px}
+.suit-face{margin-bottom:14px}
+.av.xl{width:96px;height:96px;font-size:38px;letter-spacing:-.04em}
+.suit-head h2{margin:0;font-size:var(--t3);font-weight:700;letter-spacing:-.04em;line-height:var(--lh3)}
+.suit-head .x{margin-top:4px;font-size:var(--t7);font-weight:700;color:var(--blue);letter-spacing:-.02em}
+.suit-head .btn.sub{width:auto;min-width:148px;height:42px;margin-top:16px;background:var(--fill);color:var(--g700);font-size:var(--t7)}
+
+/* 착용 횟수·사진 수. 둘 다 저장하지 않고 세어 낸 값이다. */
+.suit-stat{display:flex;gap:8px}
+.suit-stat .k{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:15px 8px;border-radius:16px;background:var(--fill-2);box-shadow:var(--card-shadow);transition:transform var(--d-1) var(--e-out)}
+.suit-stat button.k:active{transform:scale(.97)}
+.suit-stat .k b{font-size:var(--t3);font-weight:700;letter-spacing:-.05em;line-height:1}
+.suit-stat .k span{font-size:var(--t8);font-weight:600;color:var(--g500);letter-spacing:-.02em}
+
+/* 시트 안의 대표 사진 고르기 */
+.suit-pick{flex:none;display:flex}
+
+/* 관리 태그 고르기 — 여러 개를 켤 수 있다 */
+.cats{display:flex;flex-wrap:wrap;gap:7px}
+.cat.on{box-shadow:inset 0 0 0 1.5px currentColor}
+.cat:active{transform:scale(.96)}
+
+/* 아직 안 한 관리는 이름을 굵게 두고, 은퇴한 슈트는 흐리게 */
+.row.todo .t{font-weight:700}
+.row.dim{opacity:.55}
+
 /* ---------- Result — 화면 전체가 비었을 때 ---------- */
 /* TDS Result: Figure + 제목 + 설명 + 버튼을 세로로 쌓는다.
    섹션 하나만 비는 경우에는 쓰지 않는다 — 그 자리는 .note 가 맡는다. */
@@ -1022,8 +1071,10 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 /* TDS Skeleton 의 조립 블록(card / title / row / spacer)만 가져왔다.
    프리셋 9종까지 옮길 이유가 없다 — 이 앱에서 기다림이 실제로 보이는
    지점은 부팅 때 catalog.json 을 읽는 구간 하나뿐이다. */
+/* 막대는 이미 있는 .sk 셔머를 그대로 쓴다 — 스켈레톤이 앱 안에서
+   두 가지로 보이면 안 된다(핸들 조회 중에 쓰는 그것과 같은 것이다). */
 .skel{padding:2px 20px 0;pointer-events:none}
-.sk-bar{display:block;border-radius:8px;background:var(--fill)}
+.sk-bar{display:block}
 .sk-card{height:96px;border-radius:20px;margin-bottom:26px}
 .sk-title{height:19px;width:38%;margin-bottom:14px}
 .sk-row{display:flex;align-items:center;gap:13px;padding:12px 14px}
@@ -1031,10 +1082,6 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .sk-row .sk-tx{flex:1;min-width:0}
 .sk-row .sk-tx .sk-bar:first-child{height:15px;width:56%;margin-bottom:7px}
 .sk-row .sk-tx .sk-bar:last-child{height:12px;width:34%}
-@media (prefers-reduced-motion:no-preference){
-  .sk-bar{animation:skel 1.5s var(--e-in-out) infinite}
-}
-@keyframes skel{0%,100%{opacity:1}50%{opacity:.45}}
 
 .note{display:flex;gap:9px;padding:15px 16px;border-radius:16px;background:var(--blue-fill);color:var(--blue);font-size:var(--t7);font-weight:600;line-height:var(--lh7);letter-spacing:-.025em}
 .note.warn{background:var(--amber-fill);color:var(--amber)}
@@ -1065,8 +1112,14 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 @keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}
 
 /* ---------- 로그인 ---------- */
-.gate{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:0;padding:32px 28px calc(var(--safe-b) + 32px);text-align:center}
-.gate .mark{width:76px;height:76px;border-radius:24px;background:var(--blue-fill);color:var(--blue);display:flex;align-items:center;justify-content:center;margin-bottom:22px;animation:pop 460ms var(--e-spring) both}
+/* 가이드가 길어 세로가 넘칠 수 있다. justify-content:center 만 걸면
+   넘치는 순간 위가 잘려 첫 줄을 읽을 수 없으므로, 스크롤 컨테이너로 두고
+   안쪽 층의 margin:auto 0 으로 가운데를 맞춘다. */
+.gate{flex:1;display:flex;flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:32px 28px calc(var(--safe-b) + 32px)}
+.gate-in{margin:auto 0;display:flex;flex-direction:column;align-items:center;width:100%;text-align:center}
+/* 아이콘 파일을 그대로 얹는다. PNG 가 이미 둥근 모서리와 투명을 들고 있어서
+   바탕이나 반경을 따로 주지 않는다 — 주면 이중으로 깎여 테가 생긴다. */
+.gate .mark{width:76px;height:76px;display:block;margin-bottom:22px;animation:pop 460ms var(--e-spring) both}
 .gate h1{margin:0;font-size:var(--t2);font-weight:700;letter-spacing:-.045em;line-height:var(--lh2);animation:fadeUp var(--d-3) var(--e-out) 80ms both}
 .gate p{margin:10px 0 0;font-size:var(--t6);font-weight:600;color:var(--g500);letter-spacing:-.028em;line-height:var(--lh6);animation:fadeUp var(--d-3) var(--e-out) 140ms both}
 .gate .btn{margin-top:32px;animation:fadeUp var(--d-3) var(--e-out) 200ms both}
@@ -1089,6 +1142,29 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 }
 .gate .guide .tx{font-size:var(--t7);font-weight:600;color:var(--g600);letter-spacing:-.025em;line-height:var(--lh7)}
 .gate .guide .tx b{color:var(--g900);font-weight:700}
+/* 단계에 딸린 이야기. 점을 앞에 두어 지시문이 아니라 곁말임을 알린다. */
+.gate .guide .tx .sub{
+  display:block;margin-top:5px;padding-left:9px;position:relative;
+  font-size:var(--t9);font-weight:600;color:var(--g500);line-height:var(--lh9);
+}
+.gate .guide .tx .sub::before{content:"";position:absolute;left:0;top:7px;width:3px;height:3px;border-radius:50%;background:var(--g400)}
+/* 구획 제목 — 가이드와 주의사항 양쪽에 쓴다 */
+.gate .ghd{
+  padding:10px 13px 6px;text-align:left;
+  font-size:var(--t9);font-weight:700;color:var(--g500);letter-spacing:.01em;
+}
+/* 미리 알아야 할 것. 지시문이 아니라 조건이라 번호를 붙이지 않는다. */
+.gate .notes{
+  width:100%;max-width:320px;margin-top:20px;text-align:left;
+  background:var(--fill-2);border-radius:16px;padding:2px 4px 8px;
+  animation:fadeUp var(--d-3) var(--e-out) 340ms both;
+}
+.gate .notes .nt{
+  padding:5px 13px 5px 24px;position:relative;
+  font-size:var(--t9);font-weight:600;color:var(--g600);line-height:var(--lh9);letter-spacing:-.02em;
+}
+.gate .notes .nt::before{content:"";position:absolute;left:14px;top:11px;width:3px;height:3px;border-radius:50%;background:var(--g400)}
+.gate .notes .nt b{color:var(--g900);font-weight:700}
 .gate .demo{
   margin-top:14px;height:38px;padding:0 15px;border-radius:12px;
   background:transparent;color:var(--g500);font-size:var(--t7);font-weight:700;letter-spacing:-.03em;
@@ -1097,7 +1173,7 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .gate .demo:active{background:var(--fill)}
 /* 게이트 언어 전환 — 로그인 전에도 바꿀 수 있어야 한다.
    일본어 기기는 처음부터 일본어로 뜨지만, 손으로 바꿀 길이 있어야 한다. */
-.gate .langs{display:flex;gap:6px;margin-top:20px;animation:fadeUp var(--d-3) var(--e-out) 380ms both}
+.gate .langs{display:flex;gap:6px;align-self:flex-end;margin:0 0 14px;animation:fadeUp var(--d-3) var(--e-out) 60ms both}
 .gate .langs button{
   height:32px;padding:0 13px;border-radius:10px;background:var(--fill);
   font-size:var(--t8);font-weight:700;letter-spacing:-.02em;color:var(--g500);

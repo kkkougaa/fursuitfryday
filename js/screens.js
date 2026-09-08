@@ -5,6 +5,7 @@ import {
   addEvent, addShooter, addPerson, normX, touch, flush, copyTextFor, channelOf, hashtagify,
   unknownShooter, UNKNOWN_SHOOTER, unknownEvent, catColor,
 } from './store.js';
+import { renderProfile } from './suits.js';
 import * as sug from './suggest.js';
 import * as th from './thumbs.js';
 import * as av from './avatar.js';
@@ -74,7 +75,7 @@ const TABS = () => [
   ['home', S.cat.opts.homeTab || S.cat.opts.homeTitle || t('tab.home'), 'layers'],
   ['photos', t('tab.photos'), 'grid'],
   ['schedule', t('tab.schedule'), 'cal'],
-  ['settings', t('tab.settings'), 'sliders'],
+  ['profile', t('tab.profile'), 'user'],
 ];
 
 let lastTabIdx = -1;
@@ -145,7 +146,7 @@ function paintTab(k) {
   if (k === 'home') renderHome();
   else if (k === 'photos') renderPhotos();
   else if (k === 'schedule') renderSchedule();
-  else if (k === 'settings') renderSettings();
+  else if (k === 'profile') renderProfile();
 }
 
 export function goTab(k) {
@@ -164,7 +165,8 @@ export function goTab(k) {
 function applyStaticLabels() {
   const set = (sel, tx) => { const n = document.querySelector(sel); if (n) n.textContent = tx; };
   set('[data-screen="schedule"] .hdr h1', t('tab.schedule'));
-  set('[data-screen="settings"] .hdr h1', t('tab.settings'));
+  set('[data-screen="profile"] .hdr h1', t('tab.profile'));
+  set('#prof-set', t('tab.settings'));
   set('#home-sync', t('home.sync'));
   set('#flt-reset', t('filter.reset'));
   set('#sel-toggle', V.selecting ? t('photos.cancel') : t('photos.select'));
@@ -174,7 +176,7 @@ function applyStaticLabels() {
 export function renderAll() {
   applyStaticLabels();
   renderTabs();
-  ['home', 'photos', 'schedule', 'settings'].forEach(k => { if (k !== V.tab) stale.add(k); });
+  ['home', 'photos', 'schedule', 'profile'].forEach(k => { if (k !== V.tab) stale.add(k); });
   paintTab(V.tab);
 }
 
@@ -471,8 +473,14 @@ function sugCard(g, eager = false) {
  * 처음에는 전부 켜져 있다. 대개 맞기 때문에, 맞는 것을 고르는 것보다
  * 아닌 것을 빼는 쪽이 손이 덜 간다.
  */
-function reviewSheet({ title, ids, onApply, okKey = 'sug.reviewApply' }) {
-  const keep = new Set(ids);
+/**
+ * 격자에서 아닌 것을 빼는 화면.
+ * @param preset 처음부터 켜져 있을 id 들. 안 주면 전부 켜진 상태로 시작한다.
+ *   행사에서 캐릭터를 가를 때는 이미 그 캐릭터로 붙은 사진만 켜져 있어야
+ *   해서 이 값을 쓴다 — 전부 켜진 채로 열면 뺐던 것이 다시 붙는다.
+ */
+function reviewSheet({ title, ids, onApply, okKey = 'sug.reviewApply', preset = null }) {
+  const keep = new Set(preset || ids);
 
   openSheet(`<h3>${esc(title)}</h3>`
     + `<p class="lead">${t('sug.reviewLead')}</p>`
@@ -492,7 +500,7 @@ function reviewSheet({ title, ids, onApply, okKey = 'sug.reviewApply' }) {
 
   g.ids.forEach(id => {
     const p = S.cat.photos[id];
-    const cell2 = el('button', 'cell sel');
+    const cell2 = el('button', 'cell' + (keep.has(id) ? ' sel' : ''));
     cell2.innerHTML = `<img data-fid="${id}" alt="${esc(p?.name || '')}" decoding="async">`
       + `<span class="pick"><i>${ic('check', 12, 3)}</i></span>`;
     cell2.onclick = () => {
@@ -1345,7 +1353,8 @@ function tagSheet(ids, after) {
   if (!tags.length) {
     openSheet(`<h3>${t('tg.noneTitle')}</h3><p class="lead">${t('tg.noneLead')}</p>`
       + `<button class="btn" id="tg-go">${t('tg.go')}</button>`);
-    $('#tg-go').onclick = () => { closeSheet(); goTab('settings'); openTagManage(); };
+    // 태그 관리는 설정 안으로 들어갔다. 프로필 탭으로 옮긴 뒤 그 화면을 띄운다.
+    $('#tg-go').onclick = () => { closeSheet(); goTab('profile'); openTagManage(); };
     return;
   }
   const cnt = new Map(tags.map(tag => [tag, ids.filter(i => (S.cat.photos[i]?.tags || []).includes(tag)).length]));

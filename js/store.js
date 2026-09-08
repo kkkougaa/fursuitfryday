@@ -54,9 +54,14 @@ export function emptyCatalog() {
        going=참가 확정 여부. false 면 "미정" 으로, 홈 디데이를 차지하지 않는다.
        sub=행사 안의 약속 [{id,day,time,title,place,note}].
        logo 는 128px WebP base64. 정하지 않으면 목록에서 대표 사진을 쓴다.
-       [{id,name,date,endDate,going,place,note,logo,tags[],sub[],prep[...],packed[...]}] */
+       suits=그 행사에 데려간 내 퍼슈트 [suitId]. 착용 횟수의 근거가 된다.
+       [{id,name,date,endDate,going,place,note,logo,tags[],sub[],prep[...],packed[...],suits[]}] */
     events: [],
     eventTags: [],          // 행사 카테고리 [{name,color}]. 사진 태그(tags)와 별개.
+    /* 행사에 묶이지 않는 할 일. 행사별 체크리스트(events[].prep)와 같은
+       화면에 나란히 둔다 — 두 곳으로 갈리면 어디 적었는지 매번 헤맨다.
+       [{id,text,done,at}] */
+    todos: [],
     /* 짐 챙기기 공용 목록. 설정에서 관리하고 체크는 행사별(events[].packed)로 따로 남는다. */
     packing: [
       { id: 'pk1', text: t('pack.suit') },
@@ -72,9 +77,21 @@ export function emptyCatalog() {
        병합이 서버본과 합집합이라 삭제를 표현할 방법이 없었다 — 다른 기기의
        서버본에 남아 있던 행사·짐 항목이 동기화 때마다 되살아났다.
        여기 적힌 것은 병합에서 걷어낸다. */
-    deleted: { events: [], packing: [], eventTags: [], tags: [] },
+    deleted: { events: [], packing: [], eventTags: [], tags: [], suits: [], careTags: [], todos: [] },
     shooters: [],           // [{id,name,x,avatar}]   x = X 핸들, avatar = base64 96px
     people: [],             // 같이 찍은 퍼슈트 [{id,name,role,x,avatar}]
+    /* 내 퍼슈트. 캐릭터로서의 정보(이름·핸들·대표 사진)와 물건으로서의
+       기록(메이커·데뷔일·관리)을 한 곳에 둔다.
+       personId 는 people[] 의 짝을 가리킨다 — 사진에 붙는 것은 그쪽이다.
+       log 는 관리 기록과 할 일을 겸한다: doneAt 이 없으면 아직 안 한 것.
+       avatar 는 대표 사진 겸 아바타다 — 핸들로 자동 수집한 것과 사진에서
+       직접 고른 것이 같은 자리에 들어간다(96px WebP base64).
+       [{id,name,x,avatar,maker,debutAt,birthday,personId,
+         memo,retiredAt,log:[{id,kinds[],note,at,doneAt}]}] */
+    suits: [],
+    /* 관리 태그 [{name,color}]. 여기서 기본값을 깐다 —
+       데모와 신규 사용자는 migrate() 를 타지 않는다. */
+    careTags: defaultCareTags(),
     tags: [],               // 자유 태그. 설정에서 직접 만든 것만 들어간다.
     opts: {
       eventTag: true,
@@ -138,7 +155,8 @@ function migrate(raw) {
   c.opts = { ...base.opts, ...(raw.opts || {}) };
   c.rules = { camera: {}, ...(raw.rules || {}) };
   c.me = { ...base.me, ...(raw.me || {}) };
-  for (const k of ['folders', 'events', 'shooters', 'people', 'tags', 'dismissed', 'eventTags', 'packing']) {
+  for (const k of ['folders', 'events', 'shooters', 'people', 'tags', 'dismissed',
+    'eventTags', 'packing', 'suits', 'todos']) {
     if (!Array.isArray(c[k])) c[k] = base[k];
   }
   if (!c.folderTree || typeof c.folderTree !== 'object') c.folderTree = {};
@@ -150,15 +168,33 @@ function migrate(raw) {
   // 예전 스키마의 행사에 일정 필드를 채워준다
   c.events = c.events.map(e => ({
     place: null, note: null, logo: null, icon: null, endDate: null, going: true,
-    tags: [], sub: [], prep: [], packed: [], ...e,
+    tags: [], sub: [], prep: [], packed: [], suits: [], ...e,
+    suits: Array.isArray(e.suits) ? e.suits : [],
     tags: Array.isArray(e.tags) ? e.tags : [],
     sub: Array.isArray(e.sub) ? e.sub : [],
-    prep: Array.isArray(e.prep) ? e.prep : [],
+    /* 사전 준비 항목의 pin: 할 일 목록에도 띄울지. 예전 카탈로그엔 없다. */
+    prep: (Array.isArray(e.prep) ? e.prep : []).map(x => ({ pin: false, ...x })),
     packed: Array.isArray(e.packed) ? e.packed : [],
     // 종료일이 시작일보다 앞이면 무시한다
     endDate: e.endDate && e.date && e.endDate > e.date ? e.endDate : null,
     going: e.going !== false,
   }));
+  // 슈트: 예전 카탈로그에는 없던 필드라 모양을 맞춰 준다
+  c.suits = c.suits.map(x => ({
+    x: null, avatar: null, maker: null,
+    debutAt: null, birthday: null, personId: null, memo: null, retiredAt: null,
+    ...x,
+    log: (Array.isArray(x.log) ? x.log : []).map(l => ({
+      kinds: Array.isArray(l.kinds) ? l.kinds : [], note: null, doneAt: null, ...l,
+    })),
+  }));
+  /* 태그를 전부 지운 것과 "예전 카탈로그라 필드가 없는 것" 은 다르다.
+     빈 배열일 때 다시 깔면 지운 사람의 것이 열 때마다 되살아난다. */
+  if (!Array.isArray(raw.careTags)) c.careTags = defaultCareTags();
+  c.careTags = c.careTags.map(x => (typeof x === 'string'
+    ? { name: x, color: 'gray' }
+    : { name: x.name, color: CAT_COLORS.includes(x.color) ? x.color : 'gray' }));
+
   // 카테고리: 문자열 목록이던 것을 {name,color} 로 올린다
   c.eventTags = c.eventTags.map(t => (typeof t === 'string'
     ? { name: t, color: 'gray' }
@@ -183,7 +219,7 @@ export function touch() {
 
 /** 삭제를 묘비에 적는다. 병합에서 이 열쇠는 서버본에서 걷어낸다. */
 export function markDeleted(kind, key) {
-  const d = (S.cat.deleted ||= { events: [], packing: [], eventTags: [], tags: [] });
+  const d = (S.cat.deleted ||= { events: [], packing: [], eventTags: [], tags: [], suits: [], careTags: [], todos: [] });
   d[kind] = d[kind] || [];
   if (!d[kind].includes(key)) d[kind].push(key);
 }
@@ -294,7 +330,7 @@ async function mergeFromServer() {
   }
   /* 묘비를 먼저 합친다. 양쪽에서 지운 것이 모두 남아야 한다. */
   const tomb = {};
-  for (const k of ['events', 'packing', 'eventTags', 'tags']) {
+  for (const k of ['events', 'packing', 'eventTags', 'tags', 'suits', 'careTags', 'todos']) {
     tomb[k] = new Set([
       ...((server.deleted && server.deleted[k]) || []),
       ...((mine.deleted && mine.deleted[k]) || []),
@@ -312,6 +348,19 @@ async function mergeFromServer() {
   mine.packing = alive(unionBy([...(server.packing || []), ...(mine.packing || [])], x => x.id), 'packing', x => x.id);
   mine.shooters = unionBy([...server.shooters, ...mine.shooters], s => s.id);
   mine.people = unionBy([...server.people, ...mine.people], p => p.id);
+  /* 슈트는 안에 기록(log)이 또 배열이라 unionBy 의 얕은 병합으로는 한쪽이
+     통째로 덮인다 — 다른 기기에서 적어 둔 관리 기록이 조용히 사라진다.
+     그래서 슈트를 합친 뒤 log 를 id 기준으로 다시 합친다. */
+  const srvSuit = new Map((server.suits || []).map(x => [x.id, x]));
+  mine.suits = alive(unionBy([...(server.suits || []), ...mine.suits], x => x.id), 'suits', x => x.id)
+    .map(x => {
+      const sv = srvSuit.get(x.id);
+      if (!sv) return x;
+      return { ...x, log: unionBy([...(sv.log || []), ...(x.log || [])], l => l.id) };
+    });
+  mine.careTags = alive(unionBy([...(server.careTags || []), ...(mine.careTags || [])], x => x.name),
+    'careTags', x => x.name);
+  mine.todos = alive(unionBy([...(server.todos || []), ...mine.todos], x => x.id), 'todos', x => x.id);
   mine.tags = [...new Set([...server.tags, ...mine.tags])].filter(t => !tomb.tags.has(t));
   mine.dismissed = [...new Set([...server.dismissed, ...mine.dismissed])];
   mine.gone = { ...server.gone, ...mine.gone };
@@ -446,6 +495,167 @@ let pCache = null;
 export function invalidatePhotos() { pCache = null; }
 
 export const photos = () => (pCache ||= Object.entries(S.cat.photos).map(([id, p]) => ({ id, ...p })));
+/* ---------- 퍼슈트 ---------- */
+
+/** 관리 태그 기본값. 파츠를 쪼개는 대신 태그로 "헤드 세탁" 처럼 붙인다. */
+export function defaultCareTags() {
+  return [
+    { name: t('care.wash'), color: 'blue' },
+    { name: t('care.air'), color: 'teal' },
+    { name: t('care.fur'), color: 'green' },
+    { name: t('care.fix'), color: 'red' },
+    { name: t('care.head'), color: 'purple' },
+    { name: t('care.body'), color: 'amber' },
+    { name: t('care.paws'), color: 'pink' },
+  ];
+}
+
+export const suitById = id => S.cat.suits.find(x => x.id === id) || null;
+
+/** 은퇴하지 않은 슈트가 딱 하나면 그것. 아니면 null.
+ *  하나뿐이면 "어느 캐릭터냐" 를 물을 필요가 없다는 뜻이다. */
+/* ---------- 행사 없는 할 일 ---------- */
+
+export function addTodo(text) {
+  const it = { id: uid('td'), text: text.trim(), done: false, at: new Date().toISOString() };
+  S.cat.todos.push(it);
+  touch();
+  return it;
+}
+
+/**
+ * 할 일 목록. 행사에 묶이지 않은 것과, 행사 체크리스트에서 **핀을 꽂은**
+ * 사전 준비 항목을 함께 낸다.
+ *
+ * 핀 꽂은 항목은 복사하지 않고 원본 객체를 그대로 넘긴다 — 어느 쪽에서
+ * 체크해도 같은 것이 바뀌어야 하고, 복사해 두면 두 곳이 어긋난다.
+ *
+ * 안 한 것이 위로. 그 안에서는 행사 없는 것을 먼저 둔다 — 행사 항목은
+ * 그 행사 체크리스트에도 있으니 여기서는 곁들이는 쪽이다.
+ */
+export function todoSorted() {
+  const free = S.cat.todos.map(x => ({ it: x, ev: null }));
+  const pinned = S.cat.events.flatMap(e =>
+    (e.prep || []).filter(x => x.pin).map(x => ({ it: x, ev: e })));
+  return [...free, ...pinned].sort((a, b) =>
+    (a.it.done ? 1 : 0) - (b.it.done ? 1 : 0)
+    || (a.ev ? 1 : 0) - (b.ev ? 1 : 0)
+    || String(a.it.at || '').localeCompare(String(b.it.at || '')));
+}
+
+export function onlySuit() {
+  const live = S.cat.suits.filter(x => !x.retiredAt);
+  return live.length === 1 ? live[0] : null;
+}
+
+/** 슈트를 만들면 사진에 붙일 people[] 짝을 같이 만든다. */
+export function addSuit(name, extra = {}) {
+  const person = { id: uid('p'), name, role: null, x: extra.x || null, avatar: extra.avatar || null };
+  S.cat.people.push(person);
+  const suit = {
+    id: uid('su'), name, x: null, avatar: null,
+    maker: null, debutAt: null, birthday: null, memo: null, retiredAt: null,
+    ...extra, personId: person.id, log: [],
+  };
+  S.cat.suits.push(suit);
+  touch();
+  return suit;
+}
+
+/** 이 슈트가 내 캐릭터인지 — 지정 시트에서 "내 캐릭터" 를 위로 올릴 때 쓴다. */
+export const isMine = personId => S.cat.suits.some(x => x.personId === personId);
+
+/**
+ * 착용 이력. 저장하지 않고 **행사에서** 유도한다 —
+ * "이 행사에 데려갔다"(event.suits)가 곧 그날 입었다는 뜻이다.
+ * 사진에서 유도하는 것보다 정확하다: 사진을 아직 분류하지 않아도 맞다.
+ * 날짜가 없는 행사는 횟수에는 넣고 날짜 목록에서는 뺀다.
+ */
+export function suitWears(suit) {
+  if (!suit) return { n: 0, last: null, dates: [] };
+  const evs = S.cat.events.filter(e => (e.suits || []).includes(suit.id));
+  const dates = evs.map(e => e.date).filter(Boolean).sort();
+  return { n: evs.length, last: dates[dates.length - 1] || null, dates };
+}
+
+/** 이 캐릭터가 찍힌 사진 수. 사진 탭으로 넘길 때 같이 보여 준다. */
+export function suitPhotoCount(suit) {
+  if (!suit?.personId) return 0;
+  return photos().filter(p => (p.people || []).includes(suit.personId)).length;
+}
+
+/** 관리 기록을 갈라 준다. 안 한 것이 위로 온다. */
+export function careSplit(suit) {
+  const log = suit?.log || [];
+  const todo = log.filter(l => !l.doneAt).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const done = log.filter(l => l.doneAt).sort((a, b) => String(b.doneAt).localeCompare(String(a.doneAt)));
+  return { todo, done };
+}
+
+/** 마지막으로 그 태그의 관리를 한 뒤 몇 번 입었나. 세탁 주기의 실제 기준이다. */
+export function wearsSince(suit, tagName) {
+  const { done } = careSplit(suit);
+  const lastAt = done.find(l => (l.kinds || []).includes(tagName))?.doneAt || null;
+  const { n, dates } = suitWears(suit);
+  if (!lastAt) return { since: null, n };
+  const day = lastAt.slice(0, 10);
+  return { since: lastAt, n: dates.filter(d => d >= day).length };
+}
+
+/**
+ * 슈트가 하나뿐일 때 지금 있는 것을 한 번에 붙인다.
+ *
+ * 이미 쌓아 둔 사진이 수백 장인 사람에게 행사마다 버튼을 누르게 하면
+ * 그게 곧 "귀찮아서 안 쓴다" 가 된다. 하나뿐이라 답이 정해져 있으니
+ * 한 번 물어보고 끝낸다.
+ *
+ * 이미 내 캐릭터가 붙은 사진은 건드리지 않는다 — 손으로 정한 것이 우선이다.
+ * 참가하지 않은(going:false) 행사와 "행사 미상" 은 착용으로 세지 않는다.
+ */
+export function tagEverything(suit) {
+  if (!suit?.personId) return { photos: 0, events: 0 };
+  let np = 0;
+  for (const p of Object.values(S.cat.photos)) {
+    const has = p.people || [];
+    if (has.includes(suit.personId)) continue;
+    if (has.some(pid => isMine(pid))) continue;
+    p.people = [...has, suit.personId];
+    np++;
+  }
+  let ne = 0;
+  for (const e of S.cat.events) {
+    if (e.unknown || e.going === false) continue;
+    if ((e.suits || []).includes(suit.id)) continue;
+    e.suits = [...(e.suits || []), suit.id];
+    ne++;
+  }
+  if (np || ne) { invalidatePhotos(); touchNow(); }
+  return { photos: np, events: ne };
+}
+
+/**
+ * 그 행사 사진에 캐릭터를 붙인다.
+ * 이미 내 캐릭터가 붙어 있는 사진은 건드리지 않는다 — 손으로 정한 것이 우선이다.
+ * @returns 실제로 붙인 장수
+ */
+export function tagEventSuit(eventId, suit, ids) {
+  if (!suit?.personId) return 0;
+  const target = ids || photos().filter(p => p.event === eventId).map(p => p.id);
+  let n = 0;
+  for (const id of target) {
+    const p = S.cat.photos[id];
+    if (!p) continue;
+    const has = p.people || [];
+    if (has.includes(suit.personId)) continue;
+    // 다른 내 캐릭터가 이미 붙어 있으면 손으로 정한 것이므로 넘어간다
+    if (!ids && has.some(pid => isMine(pid))) continue;
+    p.people = [...has, suit.personId];
+    n++;
+  }
+  if (n) touch();
+  return n;
+}
+
 export const isUsed = p => (p.usages || []).length > 0;
 
 /* 업로드 예정으로 담아둔 사진.
@@ -485,6 +695,9 @@ export function addEvent(name, date, place, opts = {}) {
     going: opts.going !== false,
     place: (place || '').trim() || null, note: opts.note || null, logo: null,
     tags: [], sub: [], prep: [], packed: [],
+    /* 슈트가 하나뿐이면 데려간 것도 정해져 있다 — 물어볼 이유가 없다.
+       둘 이상이면 비워 두고 행사 상세에서 고르게 한다. */
+    suits: onlySuit() ? [onlySuit().id] : [],
   };
   S.cat.events.push(e); touch(); return e;
 }

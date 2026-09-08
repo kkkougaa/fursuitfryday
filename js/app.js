@@ -28,35 +28,13 @@ const shell = $('#shell');
 function showGate(msg) {
   shell.hidden = true;
   gate.hidden = false;
-  gate.innerHTML = `<div class="mark">${ic('layers', 38, 2)}</div>`
-    + `<h1>#FursuitFryday</h1>`
-    + `<p>${msg || t('gate.lede')}</p>`;
-  /* 처음 여는 사람이 실제로 막히는 세 지점만 미리 알려 준다.
-     오류 메시지로 게이트를 띄운 경우(msg)에는 넣지 않는다 — 그때는
-     지금 무엇이 잘못됐는지가 먼저 읽혀야 한다. */
-  if (!msg) {
-    const g = el('div', 'guide');
-    [
-      t('gate.step1'), t('gate.step2'), t('gate.step3'),
-    ].forEach((tx, i) => {
-      g.appendChild(el('div', 'gi', `<span class="n">${i + 1}</span><span class="tx">${tx}</span>`));
-    });
-    gate.appendChild(g);
-  }
-
-  const b = el('button', 'btn', t('gate.start'));
-  b.style.maxWidth = '320px';
-  b.onclick = () => auth.login({ resume: V.tab });
-  gate.appendChild(b);
-  gate.appendChild(el('p', 'fine', t('gate.fine')));
-
-  if (!msg && !DEMO) {
-    // 로그인 전에 무엇인지 보고 싶은 사람을 위한 출구
-    const d = el('button', 'demo', t('gate.demo'));
-    d.onclick = () => { location.search = '?demo=1'; };
-    gate.appendChild(d);
-  }
-
+  /* 안쪽 층에 담는다. 가이드가 길어지면 세로가 넘치는데, 가운데 정렬만
+     걸린 컨테이너는 넘치는 순간 위가 잘린다. margin:auto 0 이면 짧을 때는
+     가운데, 길 때는 스크롤이 된다. */
+  gate.innerHTML = '<div class="gate-in"></div>';
+  const box = gate.querySelector('.gate-in');
+  /* 언어 전환은 맨 위에 둔다. 가이드가 길어 화면을 넘기는데, 아래에 두면
+     일본어 사용자가 한국어 안내를 다 지나쳐 내려가야 찾는다. */
   if (!msg) {
     const langs = el('div', 'langs');
     LANGS.forEach(l => {
@@ -64,8 +42,56 @@ function showGate(msg) {
       b2.onclick = () => { setLang(l.k); showGate(msg); };
       langs.appendChild(b2);
     });
-    gate.appendChild(langs);
+    box.appendChild(langs);
   }
+
+  /* 마크는 앱 아이콘 파일을 그대로 쓴다. 글리프로 다시 그리면 홈 화면에
+     추가한 아이콘과 미묘하게 달라져서, 같은 앱인지 헷갈린다. */
+  box.insertAdjacentHTML('beforeend', `<img class="mark" src="./icons/icon-180.png" alt="" width="76" height="76">`
+    + `<h1>#FursuitFryday</h1>`
+    + `<p>${msg || t('gate.lede')}</p>`);
+
+  /* 시작하는 방법. 오류 메시지로 띄운 경우(msg)에는 넣지 않는다 —
+     그때는 지금 무엇이 잘못됐는지가 먼저 읽혀야 한다. */
+  if (!msg) {
+    const g = el('div', 'guide');
+    g.appendChild(el('div', 'ghd', t('gate.guideTitle')));
+    [
+      [t('gate.step1'), [t('gate.step1a')]],
+      [t('gate.step2'), [t('gate.step2a')]],
+      [t('gate.step3'), [t('gate.step3a'), t('gate.step3b')]],
+    ].forEach(([tx, subs], i) => {
+      g.appendChild(el('div', 'gi', `<span class="n">${i + 1}</span>`
+        + `<span class="tx">${tx}`
+        + subs.map(x => `<span class="sub">${x}</span>`).join('')
+        + `</span>`));
+    });
+    box.appendChild(g);
+  }
+
+  const b = el('button', 'btn', t('gate.start'));
+  b.style.maxWidth = '320px';
+  b.onclick = () => auth.login({ resume: V.tab });
+  box.appendChild(b);
+  box.appendChild(el('p', 'fine', t('gate.fine')));
+
+  if (!msg && !DEMO) {
+    // 로그인 전에 무엇인지 보고 싶은 사람을 위한 출구
+    const d = el('button', 'demo', t('gate.demo'));
+    d.onclick = () => { location.search = '?demo=1'; };
+    box.appendChild(d);
+  }
+
+  /* 미리 알아야 할 것. 로그인 버튼 뒤에 두는 이유: 먼저 읽고 시작할 수
+     있어야 하지만, 이걸 다 읽어야 시작할 수 있는 것처럼 보이면 안 된다. */
+  if (!msg) {
+    const n = el('div', 'notes');
+    n.appendChild(el('div', 'ghd', t('gate.noteTitle')));
+    [t('gate.note1'), t('gate.note2'), t('gate.note3'), t('gate.note4')]
+      .forEach(tx => n.appendChild(el('div', 'nt', tx)));
+    box.appendChild(n);
+  }
+
 }
 
 function showShell() {
@@ -304,7 +330,9 @@ function maybeRenew() {
 }
 
 /* ---------- 저장 상태 표시 ---------- */
-onSaved(() => { if (V.tab === 'settings') renderSettings(); });
+/* 설정은 push 화면이 되었다 — 열려 있지 않으면 renderSettings 가
+   스스로 아무 일도 하지 않으므로 탭을 따질 필요가 없다. */
+onSaved(() => { renderSettings(); });
 
 /* 화면을 벗어나기 전에 저장을 밀어 넣는다 — iOS 는 탭이 백그라운드로 가면 잰다. */
 addEventListener('visibilitychange', () => {
@@ -446,7 +474,7 @@ async function boot() {
     applyAccent(S.cat.opts.accent);
     th.remember([]);
     renderAll();
-    goTab(resumed && ['home', 'photos', 'tags', 'settings'].includes(resumed) ? resumed : 'home');
+    goTab(resumed && ['home', 'photos', 'schedule', 'profile'].includes(resumed) ? resumed : 'home');
 
     /* 예전에는 여기서 무조건 sync() 를 돌렸다. 앱을 열 때마다 드라이브
        목록을 통째로 다시 읽는 셈이라, 사진이 몇천 장이면 열 때마다 몇 초씩

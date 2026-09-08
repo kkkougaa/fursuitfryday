@@ -14,7 +14,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="#FursuitFryday">
 <link rel="apple-touch-icon" href="./icons/icon-180.png">
-<link rel="icon" href="./icons/icon-192.png">
+<!-- 파비콘은 32px 을 따로 준다. 192px 을 브라우저가 줄이면 탭에서 흐릿해진다. -->
+<link rel="icon" sizes="32x32" href="./icons/icon-32.png">
+<link rel="icon" sizes="192x192" href="./icons/icon-192.png">
 
 <!-- 폰트: 프리텐다드 한 계열로 통일.
      JP 를 먼저, 일반을 뒤에 받친다 — JP 에는 한글이 없고(가나·한자만)
@@ -53,9 +55,9 @@
         <div class="scroll" id="sched-body"></div>
       </section>
 
-      <section class="screen" data-screen="settings">
-        <div class="hdr"><div class="hdr-row"><h1>설정</h1></div></div>
-        <div class="scroll" id="set-body"></div>
+      <section class="screen" data-screen="profile">
+        <div class="hdr"><div class="hdr-row"><h1>프로필</h1><span class="acts"><button class="act" id="prof-set">설정</button></span></div></div>
+        <div class="scroll" id="prof-body"></div>
       </section>
     </div>
 
