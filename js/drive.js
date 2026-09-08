@@ -221,6 +221,56 @@ function multipart(meta, body) {
   ].join('\r\n');
 }
 
+/* ---------------- 폴더 목록 (자체 선택기용) ---------------- */
+
+const FOLDER_Q = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+
+/** 한 폴더 안의 하위 폴더. parentId 를 안 주면 내 드라이브 최상위. */
+export async function listFolders(parentId = 'root') {
+  const out = [];
+  let pageToken = '';
+  do {
+    const q = new URLSearchParams({
+      q: `'${parentId}' in parents and ${FOLDER_Q}`,
+      fields: 'nextPageToken,files(id,name)',
+      pageSize: '200',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
+    });
+    if (pageToken) q.set('pageToken', pageToken);
+    const data = await (await api(`${FILES}?${q}`)).json();
+    out.push(...(data.files || []));
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
+  return out;
+}
+
+/**
+ * 이름으로 폴더를 찾는다. 위치를 가리지 않으므로 깊이 묻힌 폴더도 걸린다 —
+ * 게이트 가이드가 "목록에 안 보이면 검색하면 나옵니다" 라고 약속한 그것이다.
+ */
+export async function searchFolders(text) {
+  /* 폴더 이름에 아포스트로피가 있으면 드라이브 질의가 깨진다.
+     백슬래시로 감싸 넘긴다 — 예전 코드는 ' 를 ' 로 바꿔 아무 일도 안 했다. */
+  const term = String(text || '').trim().replace(/'/g, "\\'");
+  if (!term) return [];
+  const q = new URLSearchParams({
+    q: `${FOLDER_Q} and name contains '${term}'`,
+    fields: 'files(id,name,parents)',
+    pageSize: '80',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true',
+  });
+  const data = await (await api(`${FILES}?${q}`)).json();
+  return data.files || [];
+}
+
+/** 빵부스러기용 이름. 최상위(root)는 따로 부르지 않는다. */
+export async function folderName(id) {
+  const data = await (await api(`${FILES}/${id}?fields=id,name&supportsAllDrives=true`)).json();
+  return data.name || '';
+}
+
 /* ---------------- Google Picker ---------------- */
 
 let pickerReady = null;
@@ -245,15 +295,27 @@ export async function pickFolders() {
   await loadPicker();
   const g = window.google.picker;
   return new Promise(resolve => {
+    /* 목록 모양으로 띄운다. 기본은 격자인데 폰 폭에서는 칸이 두 개밖에
+       안 들어가 폴더 이름이 잘린다. 목록이면 이름을 끝까지 읽을 수 있다. */
     const view = new g.DocsView(g.ViewId.FOLDERS)
       .setIncludeFolders(true)
       .setSelectFolderEnabled(true)
       .setMimeTypes('application/vnd.google-apps.folder');
+    if (g.DocsViewMode && view.setMode) view.setMode(g.DocsViewMode.LIST);
+
+    /* 피커는 기본으로 데스크톱 크기의 대화상자를 화면 가운데 띄운다.
+       폰에서는 화면을 꽉 채우게 크기를 직접 준다.
+       ※ 왼쪽 탐색 패널(내 드라이브 / 공유 항목 / 최근)은 그대로 둔다.
+         Feature.NAV_HIDDEN 으로 지울 수 있고 그러면 훨씬 앱처럼 보이지만,
+         공유받은 폴더로 갈 길이 함께 사라진다. */
+    const W = Math.min(window.innerWidth || 400, 1051);
+    const H = Math.min(window.innerHeight || 700, 650);
 
     new g.PickerBuilder()
       .setOAuthToken(accessToken())
       .setDeveloperKey(CONFIG.API_KEY)
       .setAppId(CONFIG.CLIENT_ID.split('-')[0])
+      .setSize(W, H)
       .addView(view)
       .enableFeature(g.Feature.MULTISELECT_ENABLED)
       .enableFeature(g.Feature.SUPPORT_DRIVES)

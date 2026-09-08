@@ -129,7 +129,17 @@ img{max-width:100%}
 .hdr-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:38px}
 .hdr h1{margin:0;font-size:var(--t2);font-weight:700;letter-spacing:-.035em;line-height:var(--lh2);transition:font-size var(--d-1) var(--e-out)}
 .hdr .acts{display:flex;align-items:center;gap:4px}
-.hdr .act{font-size:var(--t6);font-weight:700;color:var(--blue);letter-spacing:-.02em;padding:8px 6px;border-radius:10px;transition:opacity var(--d-1)}
+.hdr .act{display:flex;align-items:center;gap:4px;font-size:var(--t6);font-weight:700;color:var(--blue);letter-spacing:-.02em;padding:8px 6px;border-radius:10px;transition:opacity var(--d-1)}
+.hdr .act svg{flex:none}
+/* 아이콘만 있는 헤더 버튼 — 글자가 없으니 눌리는 면을 따로 확보한다 */
+.hdr .act.icon{padding:8px;color:var(--g600)}
+.hdr .act.icon:active{opacity:.5}
+/* 동기화 중에는 아이콘이 돈다 — 눌린 것이 눈에 보여야 한다 */
+.hdr .act.spin svg{animation:spin 900ms linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* 마지막 동기화 시각. 버튼 왼쪽에 곁들이는 값이라 작고 옅게 둔다. */
+.hdr .ago{font-size:var(--t9);font-weight:600;color:var(--g400);letter-spacing:-.02em;white-space:nowrap}
+.hdr .ago:empty{display:none}
 .hdr .act:active{opacity:.55}
 .hdr .act.ghost{color:var(--g500)}
 .hdr.compact{box-shadow:0 1px 0 var(--line)}
@@ -174,8 +184,6 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .strip.blue .k,.strip.blue .v,.strip.blue .chev{color:var(--blue)}
 .strip.plan{background:var(--c-purple-f)}
 .strip.plan .k,.strip.plan .v,.strip.plan .chev{color:var(--c-purple)}
-.synced{display:flex;align-items:center;justify-content:center;gap:5px;width:100%;margin-top:10px;padding:6px;font-size:var(--t8);font-weight:600;letter-spacing:-.02em;color:var(--g500);transition:opacity var(--d-1)}
-.synced:active{opacity:.5}
 
 /* ---------- 세그먼트 ---------- */
 .segwrap{position:sticky;top:0;z-index:4;background:var(--bg);padding:14px 20px 10px;display:flex;align-items:center;gap:10px}
@@ -878,7 +886,8 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .dday .nm{font-size:var(--t5);font-weight:700;color:var(--g900);letter-spacing:-.035em;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dday .m{font-size:var(--t8);font-weight:600;color:var(--g600);letter-spacing:-.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dday .num{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 12px;min-width:76px}
-.dday .num b{font-size:var(--t3);font-weight:700;color:var(--blue);letter-spacing:-.05em;line-height:1}
+/* 한글 설명을 뺐으니 숫자 하나가 이 칸의 주인이다. 조금 키우고 가운데. */
+.dday .num b{font-size:var(--t2);font-weight:700;color:var(--blue);letter-spacing:-.055em;line-height:1}
 .dday .num i{font-size:var(--t9);font-weight:700;color:var(--blue);opacity:.7;font-style:normal;margin-top:4px}
 .dday .exp{flex:none;width:52px;display:flex;align-items:center;justify-content:center;color:var(--blue);background:rgba(49,130,246,.09);border-left:1px solid rgba(49,130,246,.14)}
 .dday .exp svg{transform:rotate(90deg);transition:transform var(--d-2) var(--e-out)}
@@ -927,7 +936,7 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .ev .m{display:block;font-size:var(--t8);font-weight:600;color:var(--g500);margin-top:3px;letter-spacing:-.025em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ev .tt{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
 .ev .dd{flex:none;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;min-width:44px}
-.ev .dd b{font-size:var(--t6);font-weight:700;letter-spacing:-.05em;color:var(--g500);line-height:1}
+.ev .dd b{font-size:var(--t5);font-weight:700;letter-spacing:-.05em;color:var(--g500);line-height:1}
 .ev .dd i{font-size:var(--t9);font-weight:700;font-style:normal;color:var(--g500);margin-top:3px}
 .ev.up .dd b{color:var(--blue)}
 .ev.up .dd i{color:var(--blue);opacity:.75}
@@ -1028,6 +1037,32 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 .evpg.all .bar i{background:var(--green)}
 .evpg.all .pgl{color:var(--green)}
 
+
+/* ---------- 폴더 고르기 ---------- */
+
+/* 빵부스러기. 깊이 들어가면 가로로 넘치므로 그 줄만 스크롤한다. */
+.fp-crumb{display:flex;align-items:center;gap:2px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:10px;scrollbar-width:none}
+.fp-crumb::-webkit-scrollbar{display:none}
+.fp-seg{flex:none;padding:5px 8px;border-radius:9px;background:var(--fill);font-size:var(--t8);font-weight:700;color:var(--g600);letter-spacing:-.02em;white-space:nowrap}
+.fp-seg.on{background:transparent;color:var(--g900)}
+.fp-sep{flex:none;display:flex;color:var(--g400)}
+
+/* 한 줄에 두 가지 일이 있다: 왼쪽 체크로 고르고, 이름을 눌러 들어간다. */
+.fp-row{display:flex;align-items:center;border-radius:14px;transition:background var(--d-1)}
+.fp-row.on{background:var(--blue-fill)}
+.fp-ck{flex:none;width:26px;height:26px;margin:0 2px 0 12px;border-radius:9px;background:var(--fill-3);color:transparent;display:flex;align-items:center;justify-content:center;transition:background var(--d-2),color var(--d-2)}
+.fp-row.on .fp-ck{background:var(--blue);color:#fff}
+.fp-row.on .fp-ck svg{animation:pop var(--d-2) var(--e-spring) both}
+.fp-ck:disabled{opacity:.4}
+.fp-go{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:13px 14px;text-align:left}
+.fp-ico{flex:none;display:flex;color:var(--g400)}
+.fp-nm{flex:1;min-width:0;font-size:var(--t6);font-weight:600;letter-spacing:-.028em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp-chev{flex:none;display:flex;color:var(--g400)}
+/* 이미 연결해 둔 폴더 — 다시 고를 필요가 없다는 것만 알려 준다 */
+.fp-tag{flex:none;padding:2px 7px;border-radius:7px;background:var(--green-fill);color:var(--green);font-size:var(--t9);font-weight:700;white-space:nowrap}
+.fp-row.done .fp-nm{color:var(--g500)}
+.fp-load{padding:4px}
+.fp-none{padding:22px 14px;text-align:center;font-size:var(--t7);font-weight:600;color:var(--g500);line-height:var(--lh7)}
 
 /* ---------- 퍼슈트 대장 ---------- */
 

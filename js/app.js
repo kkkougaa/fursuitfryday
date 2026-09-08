@@ -8,6 +8,7 @@ import * as th from './thumbs.js';
 import * as av from './avatar.js';
 import { t, LANGS, getLang, setLang } from './i18n.js';
 import { $, el, ic, fmt, toast, openSheet, closeSheet, confirmSheet, skeleton } from './ui.js';
+import { openFolderPick } from './folderpick.js';
 import { V, renderAll, goTab, renderTabs, renderHome, renderPhotos, renderSettings, wirePhotoChrome, wireHomeSync } from './screens.js';
 
 const Q = new URLSearchParams(location.search);
@@ -146,21 +147,24 @@ function scopeSheet() {
 }
 
 /* ---------- 폴더 선택 ---------- */
-async function pickFolders() {
-  try {
-    const picked = await drive.pickFolders();
+/* 구글 피커(iframe) 대신 앱 화면으로 고른다 — 폰에서 데스크톱 파일
+   관리자처럼 보이던 것을 없애기 위해서다. 자세한 사정은 folderpick.js 머리에. */
+function pickFolders() {
+  openFolderPick(async picked => {
     if (!picked.length) return;
-    const have = new Set(S.cat.folders.map(f => f.id));
-    picked.forEach(f => { if (!have.has(f.id)) S.cat.folders.push({ id: f.id, name: f.name }); });
-    touch();
-    toast(t('sync.folderLinked', { n: picked.length }));
-    await sync();
-  } catch (e) {
-    if (e.needAuth) return relogin();
-    if (e.needScope) return scopeSheet();
-    toast(t('sync.folderPickFail'));
-    console.error(e);
-  }
+    try {
+      const have = new Set(S.cat.folders.map(f => f.id));
+      picked.forEach(f => { if (!have.has(f.id)) S.cat.folders.push({ id: f.id, name: f.name }); });
+      touch();
+      toast(t('sync.folderLinked', { n: picked.length }));
+      await sync();
+    } catch (e) {
+      if (e.needAuth) return relogin();
+      if (e.needScope) return scopeSheet();
+      toast(t('sync.folderPickFail'));
+      console.error(e);
+    }
+  });
 }
 
 /* ---------- 동기화 ---------- */
@@ -293,7 +297,9 @@ function syncBtn(busy) {
   const b = document.getElementById('home-sync');
   if (!b) return;
   b.disabled = busy;
-  b.textContent = busy ? t('sync.running') : t('sync.title');
+  // textContent 로 쓰면 아이콘이 지워진다
+  b.innerHTML = `${ic('refresh', 15, 2.3)}<span>${busy ? t('sync.running') : t('sync.title')}</span>`;
+  b.classList.toggle('spin', busy);
   b.style.opacity = busy ? '.45' : '';
 }
 

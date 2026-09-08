@@ -167,8 +167,16 @@ function applyStaticLabels() {
   const set = (sel, tx) => { const n = document.querySelector(sel); if (n) n.textContent = tx; };
   set('[data-screen="schedule"] .hdr h1', t('tab.schedule'));
   set('[data-screen="profile"] .hdr h1', t('tab.profile'));
-  set('#prof-set', t('tab.settings'));
-  set('#home-sync', t('home.sync'));
+  /* 설정은 아이콘만 둔다 — 글자를 같이 두면 헤더가 좁아진다.
+     읽어 주는 이름은 aria-label 로 남긴다. */
+  const ps = $('#prof-set');
+  if (ps) {
+    ps.innerHTML = ic('sliders', 20, 2.1);
+    ps.setAttribute('aria-label', t('tab.settings'));
+  }
+  /* 아이콘이 붙었으니 textContent 로 쓰면 아이콘이 지워진다. */
+  const sb = $('#home-sync');
+  if (sb) sb.innerHTML = `${ic('refresh', 15, 2.3)}<span>${t('home.sync')}</span>`;
   set('#flt-reset', t('filter.reset'));
   set('#sel-toggle', V.selecting ? t('photos.cancel') : t('photos.select'));
   set('#sb-more', t('sel.more'));
@@ -305,12 +313,13 @@ function paintHome(sc) {
   };
   strips.appendChild(b2);
 
-  /* 마지막 동기화 시각. 자동 동기화를 뺐으니 지금 보는 숫자가 얼마나 오래된
-     것인지는 알려 줘야 한다. 이 줄을 눌러도 동기화가 돈다. */
-  const ago = el('button', 'synced', `${ic('refresh', 13, 2.2)}<span>${agoText(S.cat.syncedAt)}</span>`);
-  ago.onclick = () => V.onSync?.();
-  strips.appendChild(ago);
   sc.appendChild(strips);
+
+  /* 마지막 동기화 시각은 헤더의 동기화 버튼 왼쪽에 작게 붙인다.
+     예전에는 목록 아래에 한 줄을 통째로 차지했는데, 자주 보는 값이 아니라
+     자리값이 아까웠다. 눌러야 하는 버튼 옆이 읽는 자리로도 맞다. */
+  const agoEl = $('#home-ago');
+  if (agoEl) agoEl.textContent = agoText(S.cat.syncedAt);
 
   /* --- 축 --- */
   // 축을 바꿀 때 홈 전체를 다시 그리면 세그먼트가 새로 생겨 알약이 안 움직인다.

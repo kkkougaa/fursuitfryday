@@ -109,6 +109,18 @@ const DICT = {
     'upd.title': '새 버전이 준비됐어요',
     'upd.lead': '지금 새로고침하면 바로 적용됩니다. 적던 내용은 먼저 저장합니다.',
     'upd.now': '새로고침',
+    'fp.title': '폴더 고르기',
+    'fp.myDrive': '내 드라이브',
+    'fp.searchPh': '폴더 이름으로 검색',
+    'fp.pick': '이 폴더 고르기',
+    'fp.unpick': '고른 것 빼기',
+    'fp.already': '연결됨',
+    'fp.linkN': '{n}개 폴더 연결하기',
+    'fp.pickFirst': '연결할 폴더를 골라 주세요',
+    'fp.emptyHere': '이 안에는 폴더가 없어요. 사진이 여기 들어 있다면 왼쪽 체크로 이 폴더를 고르고 위로 올라가세요.',
+    'fp.noHit': '그 이름의 폴더를 찾지 못했어요',
+    'fp.failed': '폴더 목록을 읽지 못했어요',
+    'fp.needAuth': '다시 로그인해 주세요',
     'srch.ph': '{label} 검색',
     'srch.phShort': '이름으로 검색',
     'srch.none': '찾는 이름이 없어요',
@@ -158,7 +170,6 @@ const DICT = {
     'sched.noDate': '날짜 미정',
     'sched.tbd': '미정',
     'sched.today': '오늘',
-    'sched.live': '진행 중',
     'sched.liveEvent': '행사 진행 중',
     'sched.goingYes': '참가 확정',
     'sched.goingNo': '참가 미정',
@@ -184,8 +195,6 @@ const DICT = {
     'sched.evNote': '일정은 사진의 <b>행사</b>와 같은 목록입니다. 여기서 만든 일정이 사진 분류에도 바로 쓰여요.',
     'sched.count': '{n}건',
     'sched.dayN': '{n}일차',
-    'sched.daysLeft': '{n}일 남음',
-    'sched.daysPast': '{n}일 지남',
     'sched.ofDays': '{n}일 중',
     'sched.spanDays': '{n}일',
     'sched.photoCount': '사진 {n}장',
@@ -357,11 +366,11 @@ const DICT = {
 
 
     /* ---- 동기화 시각 ---- */
-    'ago.never': '아직 동기화 안 함',
-    'ago.just': '방금 동기화함',
-    'ago.min': '{n}분 전 동기화',
-    'ago.hour': '{n}시간 전 동기화',
-    'ago.day': '{n}일 전 동기화',
+    'ago.never': '동기화 전',
+    'ago.just': '방금',
+    'ago.min': '{n}분 전',
+    'ago.hour': '{n}시간 전',
+    'ago.day': '{n}일 전',
     'home.plannedHint': '사진을 골라 업로드 후보로 담아보세요',
 
     /* ---- 빈 화면 ---- */
@@ -473,7 +482,6 @@ const DICT = {
     'care.sinceSec': '지난 관리 이후',
     'care.sinceN': '{n}회 착용',
     'care.tagManage': '관리 태그',
-    'care.tagManageDesc': '{n}개',
     'care.tagLead': '"세탁", "헤드"처럼 짧게 두고 여러 개를 함께 고르는 편이 편합니다.',
     'care.tagMake': '태그 만들기',
     'care.tagEdit': '태그 편집',
@@ -676,15 +684,10 @@ const DICT = {
     'ch.blog': '네이버 블로그',
     'ch.linkedin': '링크드인',
     'ch.threads': '스레드',
-    'ch.other': '기타',
 
     /* ---- 설정 ---- */
     'set.display': '표시',
-    'set.myProfile': '내 프로필',
-    'set.profileEdit': '프로필 편집',
-    'set.profileEditDesc': '닉네임 · X 아이디 · 프로필 사진',
     'set.profileSetup': '내 프로필 설정하기',
-    'set.openX': 'X 에서 @{x} 열기',
     'set.theme': '테마 색',
     'set.themeDesc': '앱 전체 강조색',
     'set.themeSheetLead': '버튼·강조·디데이에 쓰이는 색 하나만 고릅니다.',
@@ -790,7 +793,6 @@ const DICT = {
     'me.openX': 'X 에서 열기',
     'me.saved': '프로필을 저장했어요',
     'me.savedAvatar': '저장된 프로필 사진',
-    'me.newGot': '새로 받았어요',
 
     /* ---- 홈 화면 이름 ---- */
     'ht.title': '홈 화면 이름',
@@ -914,7 +916,6 @@ const DICT = {
     'common.unknownShooter': '사진사 미상',
     'common.unknownEvent': '행사 미상',
     'common.noXId': 'X 아이디 없음',
-    'common.noDate': '날짜 미정',
   },
 
   ja: {
@@ -1004,6 +1005,18 @@ const DICT = {
     'upd.title': '新しいバージョンがあります',
     'upd.lead': '今すぐ再読み込みすると反映されます。書きかけの内容は先に保存します。',
     'upd.now': '再読み込み',
+    'fp.title': 'フォルダを選ぶ',
+    'fp.myDrive': 'マイドライブ',
+    'fp.searchPh': 'フォルダ名で検索',
+    'fp.pick': 'このフォルダを選ぶ',
+    'fp.unpick': '選択を外す',
+    'fp.already': '接続済み',
+    'fp.linkN': '{n}件のフォルダを接続',
+    'fp.pickFirst': '接続するフォルダを選んでください',
+    'fp.emptyHere': 'この中にフォルダはありません。写真がここに入っているなら、左のチェックでこのフォルダを選んで上に戻ってください。',
+    'fp.noHit': 'その名前のフォルダは見つかりませんでした',
+    'fp.failed': 'フォルダ一覧を読み込めませんでした',
+    'fp.needAuth': 'もう一度ログインしてください',
     'srch.ph': '{label}を検索',
     'srch.phShort': '名前で検索',
     'srch.none': '見つかりません',
@@ -1053,7 +1066,6 @@ const DICT = {
     'sched.noDate': '日付未定',
     'sched.tbd': '未定',
     'sched.today': '今日',
-    'sched.live': '進行中',
     'sched.liveEvent': 'イベント進行中',
     'sched.goingYes': '参加確定',
     'sched.goingNo': '参加未定',
@@ -1079,8 +1091,6 @@ const DICT = {
     'sched.evNote': '予定は写真の<b>イベント</b>と同じ一覧です。ここで作った予定が写真の分類にもそのまま使われます。',
     'sched.count': '{n}件',
     'sched.dayN': '{n}日目',
-    'sched.daysLeft': 'あと{n}日',
-    'sched.daysPast': '{n}日経過',
     'sched.ofDays': '{n}日中',
     'sched.spanDays': '{n}日間',
     'sched.photoCount': '写真{n}枚',
@@ -1252,11 +1262,11 @@ const DICT = {
 
 
     /* ---- 同期の時刻 ---- */
-    'ago.never': 'まだ同期していません',
-    'ago.just': 'たった今同期しました',
-    'ago.min': '{n}分前に同期',
-    'ago.hour': '{n}時間前に同期',
-    'ago.day': '{n}日前に同期',
+    'ago.never': '未同期',
+    'ago.just': 'たった今',
+    'ago.min': '{n}分前',
+    'ago.hour': '{n}時間前',
+    'ago.day': '{n}日前',
     'home.plannedHint': '写真を選んで投稿候補に入れてみてください',
 
     /* ---- 空の画面 ---- */
@@ -1367,7 +1377,6 @@ const DICT = {
     'care.sinceSec': '前回のお手入れ以降',
     'care.sinceN': '{n}回着用',
     'care.tagManage': 'お手入れタグ',
-    'care.tagManageDesc': '{n}個',
     'care.tagLead': '「洗濯」「ヘッド」のように短くして、複数を一緒に選ぶのが便利です。',
     'care.tagMake': 'タグを作る',
     'care.tagEdit': 'タグを編集',
@@ -1570,15 +1579,10 @@ const DICT = {
     'ch.blog': 'ブログ',
     'ch.linkedin': 'LinkedIn',
     'ch.threads': 'Threads',
-    'ch.other': 'その他',
 
     /* ---- 設定 ---- */
     'set.display': '表示',
-    'set.myProfile': '自分のプロフィール',
-    'set.profileEdit': 'プロフィールを編集',
-    'set.profileEditDesc': 'ニックネーム · Xアカウント · プロフィール写真',
     'set.profileSetup': 'プロフィールを設定する',
-    'set.openX': 'Xで @{x} を開く',
     'set.theme': 'テーマカラー',
     'set.themeDesc': 'アプリ全体のアクセント色',
     'set.themeSheetLead': 'ボタン・強調・カウントダウンに使う色を一つだけ選びます。',
@@ -1684,7 +1688,6 @@ const DICT = {
     'me.openX': 'Xで開く',
     'me.saved': 'プロフィールを保存しました',
     'me.savedAvatar': '保存されたプロフィール写真',
-    'me.newGot': '取り直しました',
 
     /* ---- ホーム画面の名前 ---- */
     'ht.title': 'ホーム画面の名前',
@@ -1808,7 +1811,6 @@ const DICT = {
     'common.unknownShooter': 'カメラマン不明',
     'common.unknownEvent': 'イベント不明',
     'common.noXId': 'Xアカウントなし',
-    'common.noDate': '日付未定',
   },
 };
 

@@ -74,14 +74,19 @@ export function phase(e) {
 }
 
 /** 목록·카드에 쓰는 큰 글씨 / 작은 글씨 */
+/**
+ * 디데이 표시. sub 는 **big 이 말하지 못하는 것이 있을 때만** 낸다.
+ * "D-11" 아래 "11일 남음" 은 같은 말을 두 번 하면서 자리를 두 배로 먹었다.
+ * 여러 날 행사의 "총 3일" 은 며칠짜리인지를 알려 주니 남긴다.
+ */
 export function ddayLabel(e) {
   const ph = phase(e);
-  if (ph.state === 'none') return { big: '–', sub: t('sched.tbd'), ph };
-  if (ph.state === 'before') return { big: `D-${ph.n}`, sub: t('sched.daysLeft', { n: ph.n }), ph };
-  if (ph.state === 'after') return { big: `D+${ph.n}`, sub: t('sched.daysPast', { n: ph.n }), ph };
+  if (ph.state === 'none') return { big: t('sched.tbd'), sub: null, ph };
+  if (ph.state === 'before') return { big: `D-${ph.n}`, sub: null, ph };
+  if (ph.state === 'after') return { big: `D+${ph.n}`, sub: null, ph };
   return ph.of > 1
     ? { big: t('sched.dayN', { n: ph.idx }), sub: t('sched.ofDays', { n: ph.of }), ph }
-    : { big: t('sched.today'), sub: t('sched.live'), ph };
+    : { big: t('sched.today'), sub: null, ph };
 }
 
 const isLive = e => phase(e).state === 'during';
@@ -293,7 +298,7 @@ export function ddayCard() {
     + `<span class="m">${esc(bits)}${pg.total ? ` · ${t('sched.prep')} ${pg.done}/${pg.total}` : ''}</span></span>`;
   main.onclick = () => openEvent(e.id);
 
-  const num = el('div', 'num', `<b>${d.big}</b><i>${esc(d.sub)}</i>`);
+  const num = el('div', 'num', `<b>${d.big}</b>${d.sub ? `<i>${esc(d.sub)}</i>` : ''}`);
 
   const exp = el('button', 'exp');
   exp.setAttribute('aria-label', t('sched.expand'));
@@ -516,7 +521,7 @@ function eventBlock(e, upcoming) {
     + (chips ? `<span class="tt">${chips}</span>` : '')
     + prepBar(e, upcoming)
     + `</span>`
-    + `<span class="dd"><b>${d.big}</b><i>${esc(d.sub)}</i></span>`;
+    + `<span class="dd"><b>${d.big}</b>${d.sub ? `<i>${esc(d.sub)}</i>` : ''}</span>`;
   body.onclick = () => openEvent(e.id);
   r.appendChild(body);
   wrap.appendChild(r);

@@ -4,12 +4,12 @@
 /* ⚠ 배포할 때마다 이 숫자를 올린다. 안 올리면 iOS 홈 화면 앱이 옛 config.js
    같은 파일을 계속 붙잡고 있어서, 코드를 고쳐도 반영이 안 된 것처럼 보인다.
    특히 스코프처럼 config 에 들어가는 값을 바꿨을 때 증상이 헷갈린다. */
-const V = 'fursuitfryday-v35';
+const V = 'fursuitfryday-v42';
 const SHELL = [
   './', './index.html', './app.css', './manifest.webmanifest',
   './js/app.js', './js/auth.js', './js/avatar.js',
   './js/config-load.js', './js/demo.js', './js/drive.js',
-  './js/friday.js', './js/glass.js', './js/i18n.js', './js/imgutil.js',
+  './js/folderpick.js', './js/friday.js', './js/glass.js', './js/i18n.js', './js/imgutil.js',
   './js/schedule.js', './js/screens.js', './js/screens2.js',
   './js/store.js', './js/suggest.js', './js/suits.js', './js/thumbcache.js',
   './js/thumbs.js', './js/ui.js',
