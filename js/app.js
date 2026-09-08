@@ -26,10 +26,24 @@ const NOGLASS = SAFE || Q.has('noglass');
 const gate = $('#gate');
 const shell = $('#shell');
 
-/* 스플래시는 게이트나 셸이 뜨는 순간 치운다. 남겨 두면 그 위를 덮는다. */
+/* 스플래시를 걷는다.
+ *
+ * **셸이 뜨는 순간이 아니라 내용이 그려진 뒤에** 걷는다. 예전에는
+ * showShell() 에서 바로 걷었는데, 그 뒤로 glass.js 동적 로드와 catalog.json
+ * 읽기가 남아 있어서 "모아보기 · 동기화" 머리만 뜬 빈 화면이 몇 초 보였다.
+ * 스플래시가 z-index 50 이라 셸은 그 뒤에서 미리 그려진다.
+ *
+ * 안전망: 무슨 이유로든 못 걷으면 갇히므로 15초 뒤에는 무조건 걷는다.
+ */
+let bootGuard = setTimeout(() => hideBoot(), 15000);
 function hideBoot() {
+  clearTimeout(bootGuard);
   const b = document.getElementById('boot');
-  if (b) b.remove();
+  if (!b || b.dataset.going) return;
+  b.dataset.going = '1';
+  b.style.transition = 'opacity 180ms ease-out';
+  b.style.opacity = '0';
+  setTimeout(() => b.remove(), 200);
 }
 
 function showGate(msg) {
@@ -103,7 +117,7 @@ function showGate(msg) {
 }
 
 function showShell() {
-  hideBoot();
+  // 스플래시는 여기서 걷지 않는다 — 내용이 그려진 뒤에 걷는다(hideBoot 주석 참고)
   gate.hidden = true;
   shell.hidden = false;
 }
@@ -398,15 +412,18 @@ async function wireShell() {
   wirePhotoChrome();
   wireHomeSync();
   if (NOTHUMB) { th.disable(); toast(t('demo.diagMode')); }
-  // 굴절 유리는 지원하는 브라우저에만. 사파리는 레이어드 CSS 유리로 남는다.
-  try {
-    if (NOGLASS) throw new Error('noglass');
-    const { attachGlass, supportsSvgBackdrop } = await import('./glass.js');
-    if (supportsSvgBackdrop()) attachGlass($('#tabbar'), {
-        // radius 를 크게 주면 glass.js 가 높이의 절반으로 잘라 캡슐이 된다
+  /* 굴절 유리는 지원하는 브라우저에만. 사파리는 레이어드 CSS 유리로 남는다.
+     **기다리지 않는다** — 장식이 내용보다 앞설 이유가 없다. 예전에는 await 였고,
+     glass.js 를 받아오는 왕복이 첫 화면 앞을 막고 있었다. */
+  if (!NOGLASS) {
+    import('./glass.js').then(({ attachGlass, supportsSvgBackdrop }) => {
+      if (!supportsSvgBackdrop()) return;
+      // radius 를 크게 주면 glass.js 가 높이의 절반으로 잘라 캡슐이 된다
+      attachGlass($('#tabbar'), {
         bezel: 13, scale: 24, dispersion: 0.18, blur: 0.3, radius: 999, power: 2.4,
       });
-  } catch { /* 없어도 동작한다 */ }
+    }).catch(() => { /* 없어도 동작한다 */ });
+  }
   document.getElementById('tabbar').addEventListener('click', e => {
     const b = e.target.closest('[data-tab]');
     if (b) goTab(b.dataset.tab);
@@ -426,6 +443,7 @@ async function bootDemo() {
   V.onLogout = () => { location.search = ''; };
   renderAll();
   goTab('home');
+  hideBoot();
   setTimeout(() => toast(t('demo.hello', { n: fmt(n) })), 500);
 }
 
@@ -489,6 +507,7 @@ async function boot() {
     th.remember([]);
     renderAll();
     goTab(resumed && ['home', 'photos', 'schedule', 'profile'].includes(resumed) ? resumed : 'home');
+    hideBoot();
 
     /* 예전에는 여기서 무조건 sync() 를 돌렸다. 앱을 열 때마다 드라이브
        목록을 통째로 다시 읽는 셈이라, 사진이 몇천 장이면 열 때마다 몇 초씩
@@ -503,8 +522,9 @@ async function boot() {
   } catch (e) {
     if (e.needAuth) { showGate(t('gate.relogin')); return; }
     console.error(e);
-    toast(t('sync.catalogFail'));
     renderAll();
+    hideBoot();          // 실패해도 스플래시에 갇히면 안 된다
+    toast(t('sync.catalogFail'));
   }
 
   booted = true;

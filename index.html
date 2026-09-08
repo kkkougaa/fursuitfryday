@@ -38,12 +38,14 @@
      재 보니 파일 스무 개가 6파로 갈려 순차로 왕복했고(0→300→1000→1300→
      1600→1800→1900ms) 셸이 준비되기까지 2.1초가 걸렸다. 미리 알려 주면
      한꺼번에 받는다.
-     demo.js·glass.js 는 빼 뒀다 — 조건부로만 불려서 미리 받으면 낭비다. -->
+     demo.js 만 빼 뒀다 — ?demo=1 일 때만 불려서 미리 받으면 낭비다.
+     glass.js 는 부팅 경로에서 늘 받으므로 넣는다. -->
 <link rel="modulepreload" href="./js/auth.js">
 <link rel="modulepreload" href="./js/avatar.js">
 <link rel="modulepreload" href="./js/config-load.js">
 <link rel="modulepreload" href="./js/drive.js">
 <link rel="modulepreload" href="./js/folderpick.js">
+<link rel="modulepreload" href="./js/glass.js">
 <link rel="modulepreload" href="./js/friday.js">
 <link rel="modulepreload" href="./js/i18n.js">
 <link rel="modulepreload" href="./js/imgutil.js">
