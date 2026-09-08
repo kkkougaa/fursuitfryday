@@ -264,21 +264,25 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 
 /* 사파리 경로.
  *
- * backdrop-filter 를 **.tabbar 자신에 걸지 않는다.** 걸면 그것이 백드롭
- * 루트가 되어, 자식(.g-core/.g-rim)의 backdrop-filter 가 페이지가 아니라
- * 부모의 결과만 보게 되고 아무 일도 안 난다. isolation:isolate 도 같은
- * 이유로 뺐다. 배경 처리는 자식 두 겹이 맡는다.
+ * 배경 처리는 **한 번만** 한다. 중앙과 테두리를 다른 필터로 나눠 봤는데
+ * (자식 두 겹) 실제 아이폰에서 중앙 층의 알약 윤곽이 그대로 드러나
+ * 뿌연 덩어리가 따로 떠 보였다. 크로미움에서는 옅게 지나가지만 사파리는
+ * 그렇지 않다. 그래서 필터는 하나로 두고, 테두리는 **그려서** 만든다.
+ *
+ * 사파리는 backdrop-filter 에 SVG 필터를 못 받아(GPU 안정성 때문에 내장
+ * 필터 함수만 허용) 굴절 자체가 불가능하다. 맑은 유리로 가고, 색 번짐만
+ * 아주 옅게 얹는다.
  */
 .tabbar{
   position:absolute;left:10px;right:10px;bottom:calc(var(--safe-b) + 10px);
-  display:flex;padding:6px 5px;z-index:7;border-radius:999px;
-  /* 흰 베일을 얇게. 두꺼우면 유리가 아니라 뿌연 판이 된다 —
-     뒤가 보이는 정도가 유리답게 보이는 데 가장 중요하다. */
+  display:flex;padding:6px 5px;z-index:7;border-radius:999px;isolation:isolate;
   background:
     linear-gradient(180deg,
-      rgba(255,255,255,.12) 0%, rgba(255,255,255,.02) 45%,
-      rgba(255,255,255,0) 70%, rgba(255,255,255,.07) 100%),
-    color-mix(in srgb, var(--bg) 16%, transparent);
+      rgba(255,255,255,.34) 0%, rgba(255,255,255,.12) 38%,
+      rgba(255,255,255,.08) 68%, rgba(255,255,255,.20) 100%),
+    color-mix(in srgb, var(--bg) 46%, transparent);
+  -webkit-backdrop-filter:blur(7px) saturate(185%);
+  backdrop-filter:blur(7px) saturate(185%);
   box-shadow:
     inset 0 0 0 .5px rgba(255,255,255,.80),      /* 유리 표면 */
     inset 0 0 0 1.5px rgba(25,31,40,.055),       /* 두께가 만드는 어두운 선 */
@@ -356,34 +360,14 @@ button.row:active{background:var(--tap);transform:scale(.985)}
 }
 
 /* 탭바 전체를 도는 빛 — 선택 위치에 따라 살짝 기울어진다 */
-/* ---------- 유리 세 겹 (사파리 경로) ---------- */
-:root{--rim-w:7px}
+/* ---------- 테두리 색 번짐 (사파리 경로) ---------- */
 
 /* 링 모양 마스크 — padding 폭만큼의 띠만 남긴다 */
-.g-rim, .g-sheen{
+.g-sheen{
   -webkit-mask:linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
   -webkit-mask-composite:xor;
   mask:linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
   mask-composite:exclude;
-}
-
-/* 중앙 — 부드럽게 흐린 유리 */
-.g-core{
-  position:absolute;inset:var(--rim-w);border-radius:999px;
-  pointer-events:none;z-index:0;
-  -webkit-backdrop-filter:blur(7px) saturate(165%);
-  backdrop-filter:blur(7px) saturate(165%);
-}
-
-/* 테두리 띠 — 흐리게 하지 않고 채도·명암만 세게 올린다.
-   중앙과 처리가 달라서 그 경계가 **렌즈 가장자리**로 읽힌다.
-   사파리에서 굴절을 만들 수 없으니, 굴절이 눈에 보이는 자리(테두리)를
-   다르게 처리해서 같은 단서를 준다. */
-.g-rim{
-  position:absolute;inset:0;border-radius:inherit;padding:var(--rim-w);
-  pointer-events:none;z-index:0;
-  -webkit-backdrop-filter:blur(.5px) saturate(320%) contrast(1.16);
-  backdrop-filter:blur(.5px) saturate(320%) contrast(1.16);
 }
 
 /* 테두리 색 번짐 — 색수차 흉내.
@@ -419,26 +403,18 @@ button.row:active{background:var(--tap);transform:scale(.985)}
   opacity:.9;
 }
 @media (prefers-color-scheme:dark){
-  .g-core{
-    -webkit-backdrop-filter:blur(9px) saturate(165%) brightness(1.06);
-    backdrop-filter:blur(9px) saturate(165%) brightness(1.06);
-  }
-  .g-rim{
-    -webkit-backdrop-filter:blur(.5px) saturate(300%) contrast(1.1) brightness(1.18);
-    backdrop-filter:blur(.5px) saturate(300%) contrast(1.1) brightness(1.18);
-  }
   /* 어두운 바닥에서는 옅은 색도 잘 보이므로 더 낮춘다 */
   .g-sheen{opacity:.6}
 }
 /* backdrop-filter 자체를 못 쓰는 환경 */
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
-  .g-core, .g-rim, .g-sheen{display:none}
+  .g-sheen{display:none}
 }
 
 .tablight{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;z-index:0}
 .tablight::before{
   content:"";position:absolute;width:200%;height:200%;top:-50%;left:-50%;
-  background:radial-gradient(circle at 30% 30%, rgba(255,255,255,.10) 0%, transparent 50%);
+  background:radial-gradient(circle at 30% 30%, rgba(255,255,255,.20) 0%, transparent 50%);
   transform:rotate(calc((var(--i,0) - 1.5) * 13deg));
   transition:transform 520ms var(--e-out);
 }
@@ -552,13 +528,8 @@ button.row:active{background:var(--tap);transform:scale(.985)}
  * 유리는 맑다. 굴절과 색수차가 효과를 만들고 blur 는 거의 쓰지 않는다.
  * 그래서 CSS blur 와 베젤 링(::before)을 물리고, 틴트도 얇게 깐다.
  * 사파리(아이폰)는 이 클래스가 붙지 않아 아래의 레이어드 유리를 그대로 쓴다. */
-/* 크로미움: SVG 굴절이 이미 진짜로 휘어 주니 core/rim 은 필요 없다.
-   무지개 반사는 여기서도 값이 있어 남긴다 — 굴절된 유리 위에서 섞인다. */
-.glass-svg .g-core, .glass-svg .g-rim{display:none}
-/* 크로미움은 굴절이 진짜라 흰 원을 원래대로 둔다 */
-.glass-svg .tablight::before{background:radial-gradient(circle at 30% 30%, rgba(255,255,255,.20) 0%, transparent 50%)}
+/* 크로미움: 굴절은 SVG 필터가 진짜로 해 준다. 색 번짐은 여기서도 남긴다. */
 .glass-svg .tabbar{
-  isolation:isolate;
   -webkit-backdrop-filter:var(--glass-filter);
   backdrop-filter:var(--glass-filter);
   background:
