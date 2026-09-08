@@ -11,6 +11,7 @@ import * as av from './avatar.js';
 import {
   $, el, ic, esc, fmt, avatarHTML, flipSwitch, push, pop, popAll, openSheet, closeSheet,
   toast, confirmSheet, wireScroll, segment, countUp, setNavRight, keepScroll, openX, icFill,
+  result,
 } from './ui.js';
 /* screens2.js 와는 순환 참조다. 서로 함수 선언만 쓰고 모듈 평가 시점에
    접근하지 않으므로 ES 모듈에서 안전하다. */
@@ -369,16 +370,29 @@ function paintGroups(wrap) {
   th.warm(box.querySelectorAll('img[data-fid]'), 4);
 }
 
+/* 사진이 0장인 두 경우를 갈라 준다.
+ *
+ * 폴더를 아직 안 붙였을 때와, 붙였는데 한 번도 동기화하지 않았을 때는
+ * 해야 할 일이 다르다. 예전에는 둘 다 "폴더 고르기" 를 내밀었는데, 폴더를
+ * 이미 붙여 둔 사람에게는 그게 고장으로 보인다 — 붙였는데 왜 또 고르라는지.
+ * 동기화가 안 된 경우에는 동기화 버튼을 내민다. */
 function emptyState() {
-  const s = el('div', 'sec');
-  s.style.paddingTop = '28px';
-  s.innerHTML = `<div class="gtitle" style="padding:0"><h2>${t('empty.title')}</h2>`
-    + `<div class="m">${t('empty.lead')}</div></div>`;
-  const b = el('button', 'btn', `${ic('folder', 19, 2.1)}${t('empty.pick')}`);
-  b.style.marginTop = '24px';
-  b.onclick = () => V.onPickFolders?.();
-  s.appendChild(b);
-  return s;
+  if (S.cat.folders.length && !S.cat.syncedAt) {
+    return result({
+      icon: 'refresh',
+      title: t('res.syncTitle'),
+      lead: t('res.syncLead'),
+      cta: t('set.syncNow'),
+      onCta: () => V.onSync?.(),
+    });
+  }
+  return result({
+    icon: 'folder',
+    title: t('empty.title'),
+    lead: t('empty.lead'),
+    cta: t('empty.pick'),
+    onCta: () => V.onPickFolders?.(),
+  });
 }
 
 function sugCard(g, eager = false) {
@@ -881,13 +895,33 @@ function paintPhotos(sc) {
   $('#flt-reset').hidden = !hasFilter(V.filter);
   sc.innerHTML = '';
 
-  if (!photos().length) { sc.appendChild(emptyState()); wireScroll(); return; }
+  if (!photos().length) {
+    /* 사진이 한 장도 없으면 필터 칩은 고를 것이 없다 — 처음 들어온 사람
+       화면에 동작하지 않는 줄이 하나 떠 있는 셈이라 접는다.
+       필터가 다 걸러낸 경우(아래)는 반대로 칩이 남아 있어야 한다. */
+    $('#ph-chips').hidden = true;
+    sc.appendChild(emptyState());
+    wireScroll();
+    return;
+  }
+  $('#ph-chips').hidden = false;
 
   if (!list.length) {
-    const n = el('div', 'sec');
-    n.style.paddingTop = '40px';
-    n.appendChild(el('div', 'note', `${ic('info', 17)}<span>${t('filter.empty')}</span>`));
-    sc.appendChild(n);
+    /* 여기까지 왔으면 사진은 있고 필터가 다 걸러낸 것이다. 안내만 띄우면
+       필터를 어디서 푸는지 다시 찾아 올라가야 하니 푸는 버튼을 같이 준다. */
+    sc.appendChild(result({
+      icon: 'sliders',
+      title: t('res.filterTitle'),
+      lead: t('res.filterLead', { n: fmt(photos().length) }),
+      cta: t('filter.reset'),
+      onCta: () => {
+        V.filter = NO_FILTER();
+        V.limit = 60;
+        saveView();
+        renderPhotos();
+        toast(t('filter.resetDone'));
+      },
+    }));
   } else if (V.group && !pinned(V.group)) {
     paintGrouped(sc, list);
   } else {

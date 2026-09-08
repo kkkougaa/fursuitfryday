@@ -16,8 +16,14 @@
 <link rel="apple-touch-icon" href="./icons/icon-180.png">
 <link rel="icon" href="./icons/icon-192.png">
 
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap">
+<!-- 폰트: 프리텐다드 한 계열로 통일.
+     JP 를 먼저, 일반을 뒤에 받친다 — JP 에는 한글이 없고(가나·한자만)
+     일반에는 한자가 435자뿐이라 어느 한쪽만으로는 두 언어를 다 못 받는다.
+     통짜 woff2 는 JP 가 5.3MB 라 dynamic subset 을 쓴다. 119개 청크로
+     쪼개져 있어 화면에 실제 나온 글자의 청크만 내려온다. -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-jp-dynamic-subset.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
 <link rel="stylesheet" href="./app.css">
 </head>
 <body>

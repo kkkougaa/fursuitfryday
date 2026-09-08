@@ -83,6 +83,43 @@ export function avatarHTML(name, dataUrl, cls = '') {
 }
 
 /* ---------- 헤더 축소 ---------- */
+/* TDS Result — 보여줄 것이 아무것도 없을 때의 전면 상태.
+ * Figure(아이콘) + 제목 + 설명 + 버튼. 문구는 부르는 쪽에서 t() 로 넘긴다.
+ */
+export function result({ icon, title, lead, cta, onCta }) {
+  const r = el('div', 'result');
+  r.innerHTML = `<div class="fig">${ic(icon, 30, 1.9)}</div><h2>${esc(title)}</h2>`
+    + (lead ? `<p>${esc(lead)}</p>` : '');
+  if (cta) {
+    const b = el('button', 'btn', esc(cta));
+    b.onclick = onCta;
+    r.appendChild(b);
+  }
+  return r;
+}
+
+/* TDS Skeleton — 조립 블록만. 'card' | 'title' | 'row' | 'spacer:N'
+ * ex) skeleton(['card', 'title', 'row', 'row', 'row'])
+ */
+export function skeleton(parts) {
+  const box = el('div', 'skel');
+  box.setAttribute('aria-hidden', 'true');
+  parts.forEach(k => {
+    if (k === 'card') { box.appendChild(el('span', 'sk-bar sk-card')); return; }
+    if (k === 'title') { box.appendChild(el('span', 'sk-bar sk-title')); return; }
+    if (k.startsWith('spacer:')) {
+      const sp = el('div', '');
+      sp.style.height = `${parseInt(k.slice(7), 10) || 0}px`;
+      box.appendChild(sp);
+      return;
+    }
+    box.appendChild(el('div', 'sk-row',
+      '<span class="sk-bar sk-ico"></span>'
+      + '<span class="sk-tx"><span class="sk-bar"></span><span class="sk-bar"></span></span>'));
+  });
+  return box;
+}
+
 export function wireScroll(root = document) {
   root.querySelectorAll('.scroll').forEach(sc => {
     if (sc.dataset.wired) return;

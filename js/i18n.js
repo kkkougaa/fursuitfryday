@@ -74,7 +74,6 @@ const DICT = {
     'chip.person': '퍼슈트',
     'filter.reset': '필터 초기화',
     'filter.resetDone': '필터를 모두 해제했어요',
-    'filter.empty': '조건에 맞는 사진이 없어요. 위 필터를 조정해 보세요.',
 
     /* ---- 사진 목록 ---- */
     'photos.count': '{n}장',
@@ -350,6 +349,10 @@ const DICT = {
     'home.plannedHint': '사진을 골라 업로드 후보로 담아보세요',
 
     /* ---- 빈 화면 ---- */
+    'res.syncTitle': '아직 사진을 읽지 않았어요',
+    'res.syncLead': '폴더는 연결됐습니다. 동기화하면 사진 목록을 읽어와 여기 모아 보여드려요.',
+    'res.filterTitle': '조건에 맞는 사진이 없어요',
+    'res.filterLead': '필터를 풀면 전체 {n}장을 볼 수 있어요.',
     'empty.title': '사진 폴더를 연결해 주세요',
     'empty.lead': '구글 드라이브에서 행사 사진이 담긴 폴더를 고르면, 목록을 읽어와 여기 모아 보여드려요. 사진은 읽기만 하고 절대 수정하지 않습니다.',
     'empty.pick': '폴더 고르기',
@@ -821,7 +824,6 @@ const DICT = {
     'chip.person': '着ぐるみ',
     'filter.reset': 'フィルタを解除',
     'filter.resetDone': 'フィルタをすべて解除しました',
-    'filter.empty': '条件に合う写真がありません。上のフィルタを調整してみてください。',
 
     /* ---- 写真一覧 ---- */
     'photos.count': '{n}枚',
@@ -1097,6 +1099,10 @@ const DICT = {
     'home.plannedHint': '写真を選んで投稿候補に入れてみてください',
 
     /* ---- 空の画面 ---- */
+    'res.syncTitle': 'まだ写真を読み込んでいません',
+    'res.syncLead': 'フォルダは接続済みです。同期すると写真の一覧を読み込んで、ここにまとめて表示します。',
+    'res.filterTitle': '条件に合う写真がありません',
+    'res.filterLead': 'フィルタを外すと全{n}枚を見られます。',
     'empty.title': '写真フォルダを接続してください',
     'empty.lead': 'Googleドライブでイベント写真の入ったフォルダを選ぶと、一覧を読み込んでここにまとめて表示します。写真は読むだけで、書き換えることはありません。',
     'empty.pick': 'フォルダを選ぶ',

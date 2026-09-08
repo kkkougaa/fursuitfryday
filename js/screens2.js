@@ -354,7 +354,7 @@ export function usageSheet(ids, after) {
   inp.addEventListener('input', () => {
     const v = inp.value.trim(), k = channelOf(v);
     det.innerHTML = !v ? t('use.detectHint')
-      : k ? `<span class="ch ${k}" style="width:26px;height:26px;border-radius:8px;font-size:10px">${chLabel(v)}</span><span style="color:var(--green);font-weight:700">${t('use.detected', { name: CHNAME[k] })}</span>`
+      : k ? `<span class="ch ${k}" style="width:26px;height:26px;border-radius:8px;font-size:var(--t9)">${chLabel(v)}</span><span style="color:var(--green);font-weight:700">${t('use.detected', { name: CHNAME[k] })}</span>`
         : `${ic('info', 15)}<span>${t('use.unknownDomain')}</span>`;
   });
   $('#u-save').onclick = () => {
@@ -906,7 +906,7 @@ function paintBulkAvatar(sc) {
     inp.maxLength = 60;
     inp.autocapitalize = 'off';
     inp.autocorrect = 'off';
-    inp.style.cssText = 'flex:0 0 128px;height:40px;padding:0 12px;border-radius:11px;border:0;background:var(--fill);font:inherit;font-size:14px;font-weight:600';
+    inp.style.cssText = 'flex:0 0 128px;height:40px;padding:0 12px;border-radius:12px;border:0;background:var(--fill);font:inherit;font-size:var(--t7);font-weight:600';
     inp.dataset.id = x.id;
     r.appendChild(inp);
     box.appendChild(r);

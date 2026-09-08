@@ -7,7 +7,7 @@ import * as sug from './suggest.js';
 import * as th from './thumbs.js';
 import * as av from './avatar.js';
 import { t, LANGS, getLang, setLang } from './i18n.js';
-import { $, el, ic, fmt, toast, openSheet, closeSheet, confirmSheet } from './ui.js';
+import { $, el, ic, fmt, toast, openSheet, closeSheet, confirmSheet, skeleton } from './ui.js';
 import { V, renderAll, goTab, renderTabs, renderHome, renderPhotos, renderSettings, wirePhotoChrome, wireHomeSync } from './screens.js';
 
 const Q = new URLSearchParams(location.search);
@@ -434,6 +434,12 @@ async function boot() {
     lead: t('auth.logoutLead'),
     onOk: () => { auth.logout(); location.reload(); },
   });
+
+  /* 여기서 catalog.json 을 드라이브에서 읽는다. 셸은 이미 떴는데 홈은
+     비어 있어서, 모바일 데이터로 들어오면 몇 초 동안 흰 화면만 보였다.
+     홈이 그려질 모양(디데이 카드 + 섹션 + 행)을 미리 깔아 둔다.
+     renderHome() 이 같은 컨테이너를 비우고 다시 그리므로 치울 필요는 없다. */
+  $('#home-scroll')?.appendChild(skeleton(['card', 'title', 'row', 'row', 'row']));
 
   try {
     await load();
