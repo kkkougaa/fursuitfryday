@@ -88,7 +88,13 @@ export function renderTabs() {
   const idx = Math.max(0, items.findIndex(([k]) => k === V.tab));
 
   if (!bar.querySelector('.tabknob')) {
-    bar.innerHTML = '<div class="tablight"></div><div class="tabknob"><i></i></div>'
+    /* 유리 세 겹. 사파리는 backdrop-filter 에 SVG 필터를 못 받으므로
+       (GPU 안정성 때문에 내장 필터 함수만 허용한다) 굴절을 만들 수 없다.
+       대신 배경 처리를 중앙(.g-core)과 테두리(.g-rim)로 **나눠서** 두 층의
+       차이가 렌즈 가장자리로 읽히게 하고, .g-sheen 이 실제 배경과 섞여
+       무지개 반사를 만든다. 크로미움에서는 SVG 굴절이 있으니 core/rim 은 끈다. */
+    bar.innerHTML = '<div class="g-core"></div><div class="g-rim"></div><div class="g-sheen"></div>'
+      + '<div class="tablight"></div><div class="tabknob"><i></i></div>'
       + items.map(([k, , icon]) => `<button class="tab" data-tab="${k}">`
         + `<span class="ico"><span class="out">${ic(icon, 24, 1.9)}</span>`
         + `<span class="fill">${icFill(icon, 24)}</span></span>`

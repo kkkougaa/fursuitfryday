@@ -89,9 +89,19 @@ export function wireScroll(root = document) {
     sc.dataset.wired = '1';
     const h = sc.closest('.screen')?.querySelector('.hdr');
     const nb = sc.closest('.pushed')?.querySelector('.navbar');
+    /* 스크롤하면 테두리 반사가 돈다. 기울기 센서(DeviceOrientation)는 iOS 에서
+       권한을 따로 받아야 해서 안 쓴다 — 스크롤만으로도 빛이 움직이는 느낌은 난다.
+       rAF 로 묶어 프레임당 한 번만 쓴다. */
+    let tick = 0;
     sc.addEventListener('scroll', () => {
       h?.classList.toggle('compact', sc.scrollTop > 10);
       nb?.classList.toggle('line', sc.scrollTop > 6);
+      if (tick) return;
+      tick = requestAnimationFrame(() => {
+        tick = 0;
+        const bar = $('#tabbar');
+        if (bar) bar.style.setProperty('--sheen', `${(sc.scrollTop * 0.4) % 360}deg`);
+      });
     }, { passive: true });
   });
 }
