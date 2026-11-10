@@ -230,10 +230,9 @@ struct SettingsView: View {
                     busy = text
                     fraction = part
                 }
-                var lines = ["같은 사진을 찾아 기록을 붙임 \(out.linked)장"]
-                if out.unsure > 0 { lines.append("후보는 있지만 같은 그림인지 애매해서 안 붙임 \(out.unsure)장") }
-                if out.missing > 0 { lines.append("사진첩에 해상도·촬영 시각이 맞는 사진이 없음 \(out.missing)장") }
-                if out.skipped > 0 { lines.append("촬영 정보가 없어 찾지 못함 \(out.skipped)장") }
+                var lines = ["같은 사진을 찾아 기록을 붙임 \(out.linked)장 (그중 앨범 안에서 찾음 \(out.inAlbum)장)"]
+                if out.unsure > 0 { lines.append("닮은 사진이 여럿이라 가릴 수 없어 안 붙임 \(out.unsure)장") }
+                if out.missing > 0 { lines.append("같은 그림을 사진첩에서 찾지 못함 \(out.missing)장") }
                 if out.failed > 0 { lines.append("드라이브에서 받지 못함 \(out.failed)장") }
                 lines.append("아직 대기 중 \(web.pending.count)장")
                 report = lines.joined(separator: "\n")
