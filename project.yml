@@ -38,7 +38,7 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         # HTTPS 외 암호화를 안 쓴다 — TestFlight 업로드 때 수출 규정 질문을 건너뛴다
         ITSAppUsesNonExemptEncryption: false
-        NSPhotoLibraryUsageDescription: 사진첩의 폴더에서 행사 사진을 불러와 사용 기록을 남깁니다. 사진은 고치지 않습니다.
+        NSPhotoLibraryUsageDescription: 고른 앨범의 행사 사진을 불러와 사용 기록을 남기고, 요청하면 사진을 그 앨범에 담습니다. 사진 자체는 고치지 않습니다.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kouga.fursuitfryday

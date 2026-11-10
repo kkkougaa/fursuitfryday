@@ -252,6 +252,9 @@ final class WebImport: ObservableObject {
         return done
     }
 
+    /// 대기 중인 기록들의 파일 이름(확장자 빼고 소문자)
+    var pendingStems: Set<String> { Set(pending.map { ($0.name as NSString).deletingPathExtension.lowercased() }) }
+
     func discardPending() {
         pending = []
         save()

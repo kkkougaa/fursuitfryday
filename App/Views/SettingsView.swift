@@ -37,6 +37,9 @@ struct SettingsView: View {
     @State private var keying = false
     @State private var importing = false
     @State private var dropping = false
+    /// 파일 고르기는 한 화면에 하나만 붙일 수 있어서, 무엇을 고르는지를 따로 둔다
+    @State private var pickingPhotos = false
+    @State private var busy: String?
 
     var body: some View {
         let o = store.catalog.opts
@@ -53,6 +56,16 @@ struct SettingsView: View {
             Section("사진") {
                 button("rectangle.stack.fill", "teal", "사진첩 앨범", library.sourceTitle.isEmpty ? "고르기" : library.sourceTitle) {
                     choosingAlbum = true
+                }
+                button("folder.fill.badge.plus", "blue", "파일에서 사진 가져오기", nil) {
+                    pickingPhotos = true
+                    importing = true
+                }
+                if let busy {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text(busy).font(.system(size: 15)).foregroundStyle(Tone.g700)
+                    }
                 }
             }
 
@@ -75,7 +88,10 @@ struct SettingsView: View {
 
             Section {
                 button("square.and.arrow.up", "blue", "기록 내보내기", nil) { export() }
-                button("square.and.arrow.down", "green", "기록 가져오기", nil) { importing = true }
+                button("square.and.arrow.down", "green", "기록 가져오기", nil) {
+                    pickingPhotos = false
+                    importing = true
+                }
                 if !web.pending.isEmpty {
                     button("clock.arrow.circlepath", "amber", "웹 기록 대기", "\(web.pending.count)장") { dropping = true }
                 }
@@ -107,13 +123,20 @@ struct SettingsView: View {
         .namePrompt("unavatar 키", placeholder: "퍼블리셔블 키", action: "저장", isPresented: $keying) { key in
             UserDefaults.standard.set(key, forKey: "fff.unavatar.pk")
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
-            if case .success(let url) = result { load(url) } else { toast("파일을 열지 못했어요") }
+        .fileImporter(isPresented: $importing, allowedContentTypes: pickingPhotos ? [.image] : [.json],
+                      allowsMultipleSelection: pickingPhotos) { result in
+            guard case .success(let urls) = result, !urls.isEmpty else {
+                toast("파일을 열지 못했어요")
+                return
+            }
+            if pickingPhotos { importPhotos(urls) } else { load(urls[0]) }
         }
-        .confirm("짝을 못 찾은 웹 기록 \(web.pending.count)장",
-                 message: "웹 버전에서 가져온 사진 기록 가운데, 같은 파일 이름의 사진이 아직 앨범에 없는 것들입니다. 그 사진이 앨범에 들어오면 저절로 붙습니다. 버리면 다시 가져와야 합니다.",
-                 action: "대기 기록 버리기", isPresented: $dropping) {
-            web.discardPending()
+        .confirmationDialog("짝을 못 찾은 웹 기록 \(web.pending.count)장", isPresented: $dropping, titleVisibility: .visible) {
+            Button("사진첩에서 찾아 앨범에 넣기") { findInLibrary() }
+            Button("대기 기록 버리기", role: .destructive) { web.discardPending() }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("웹 버전에서 가져온 사진 기록 가운데, 같은 파일 이름의 사진이 아직 앨범에 없는 것들입니다. 사진첩 어딘가에 그 사진이 있으면 이름으로 찾아 앨범에 넣을 수 있습니다. 앨범에 들어오면 기록이 저절로 붙습니다.")
         }
     }
 
@@ -123,6 +146,34 @@ struct SettingsView: View {
 
     private func link(_ route: Route, _ icon: String, _ color: String, _ title: String, _ value: String?) -> some View {
         NavigationLink(value: route) { SettingLabel(icon: icon, color: color, title: title, value: value) }
+    }
+
+    /// 사진첩 전체에서 웹 기록과 이름이 같은 사진을 찾아 앨범에 넣는다
+    private func findInLibrary() {
+        busy = "사진첩에서 찾는 중…"
+        Task {
+            do {
+                let added = try await library.addToAlbum(named: web.pendingStems)
+                toast(added > 0 ? "\(added)장을 앨범에 넣었어요" : "이름이 같은 사진을 찾지 못했어요")
+            } catch {
+                toast((error as? PhotoLibrary.AlbumError)?.text ?? "앨범에 넣지 못했어요")
+            }
+            busy = nil
+        }
+    }
+
+    /// 파일에서 고른 사진을 사진첩에 저장하고 앨범에 넣는다
+    private func importPhotos(_ urls: [URL]) {
+        busy = "사진 가져오는 중… 0/\(urls.count)"
+        Task {
+            do {
+                let done = try await library.importFiles(urls) { n in busy = "사진 가져오는 중… \(n)/\(urls.count)" }
+                toast("\(done)장을 앨범에 넣었어요" + (done < urls.count ? " · \(urls.count - done)장 실패" : ""))
+            } catch {
+                toast((error as? PhotoLibrary.AlbumError)?.text ?? "사진을 가져오지 못했어요")
+            }
+            busy = nil
+        }
     }
 
     /// 기록 파일을 공유 시트로 내보낸다 — 파일 앱·에어드롭·메일 어디로든
@@ -322,6 +373,10 @@ struct EntitySheet: View {
     @State private var role = ""
     @State private var x = ""
     @State private var pattern = ""
+    @State private var deleting = false
+
+    /// 내 퍼슈트와 짝인 항목은 프로필의 퍼슈트 대장에서 지운다
+    private var isMySuit: Bool { kind == .person && store.catalog.suits.contains { $0.personId == entry.id } }
 
     var body: some View {
         SheetBody(title: entry.name) {
@@ -340,6 +395,18 @@ struct EntitySheet: View {
                 Button("X 에서 @\(handle) 열기") { openURL(url) }.buttonStyle(FillButtonStyle())
                 Button("아바타 새로 받기") { save(refetch: true) }.buttonStyle(FillButtonStyle())
             }
+            if !isMySuit {
+                Button("목록에서 지우기") { deleting = true }
+                    .font(.system(size: 15, weight: .bold)).foregroundStyle(Tone.red)
+                    .frame(maxWidth: .infinity).frame(height: 44)
+            }
+        }
+        .confirm("\"\(entry.name)\" 지울까요?",
+                 message: entry.count > 0 ? "이 \(kind == .shooter ? "사진사" : "퍼슈트")로 지정한 사진 \(entry.count)장에서 지정이 풀립니다. 사진과 사용 이력은 그대로 남습니다."
+                     : "목록에서 사라집니다.",
+                 action: "지우기", isPresented: $deleting) {
+            remove()
+            dismiss()
         }
         .onAppear {
             name = entry.name
@@ -347,6 +414,26 @@ struct EntitySheet: View {
             x = entry.x ?? ""
             pattern = entry.pattern ?? ""
         }
+    }
+
+    /// 목록에서 지우고, 이 항목을 가리키던 사진·규칙에서도 뗀다
+    private func remove() {
+        let id = entry.id
+        if kind == .shooter {
+            let keys = store.catalog.photos.filter { $0.value.shooter == id }.map(\.key)
+            store.update(keys) { $0.shooter = nil }
+            store.edit { c in
+                c.shooters.removeAll { $0.id == id }
+                c.rules = c.rules.filter { $0.value != id }
+            }
+            store.markDeleted("shooters", id)
+        } else {
+            let keys = store.catalog.photos.filter { $0.value.people.contains(id) }.map(\.key)
+            store.update(keys) { $0.people.removeAll { $0 == id } }
+            store.edit { $0.people.removeAll { $0.id == id } }
+            store.markDeleted("people", id)
+        }
+        toast("\"\(entry.name)\" 지웠어요")
     }
 
     private func save(refetch: Bool) {

@@ -204,6 +204,78 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         }
     }
 
+    // MARK: 앨범에 넣기 (사진 자체는 고치지 않는다 — 앨범에 담기만 한다)
+
+    enum AlbumError: Error {
+        case notAlbum
+
+        var text: String { "폴더가 아니라 앨범을 골라야 넣을 수 있어요" }
+    }
+
+    /// 사진첩 전체에서 파일 이름(확장자 빼고, 대소문자 무시)이 맞는 사진을 찾아 고른 앨범에 넣는다.
+    /// 이미 앨범에 있는 사진은 건너뛴다. 넣은 장수를 돌려준다.
+    func addToAlbum(named stems: Set<String>) async throws -> Int {
+        guard let sourceId, PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject != nil
+        else { throw AlbumError.notAlbum }
+        let inAlbum = Set(all.map(\.localIdentifier))
+        return try await Task.detached(priority: .userInitiated) {
+            var hits: [PHAsset] = []
+            let o = PHFetchOptions()
+            o.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
+            PHAsset.fetchAssets(with: o).enumerateObjects { asset, _, _ in
+                guard !inAlbum.contains(asset.localIdentifier),
+                      let name = PHAssetResource.assetResources(for: asset).first?.originalFilename
+                else { return }
+                if stems.contains((name as NSString).deletingPathExtension.lowercased()) { hits.append(asset) }
+            }
+            guard !hits.isEmpty else { return 0 }
+            let found = hits
+            try await PHPhotoLibrary.shared().performChanges {
+                guard let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject else { return }
+                PHAssetCollectionChangeRequest(for: album)?.addAssets(found as NSArray)
+            }
+            return found.count
+        }.value
+    }
+
+    /// 파일(파일 앱·구글 드라이브 등)에서 고른 사진을 사진첩에 저장하고 고른 앨범에 넣는다.
+    /// 파일 이름을 원본 이름으로 남겨서, 웹 기록과 이름으로 짝을 맞출 수 있게 한다.
+    func importFiles(_ urls: [URL], progress: @escaping @MainActor (Int) -> Void) async throws -> Int {
+        guard let sourceId, PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject != nil
+        else { throw AlbumError.notAlbum }
+        var done = 0
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            // 클라우드에 있는 파일은 여기서 내려받는다. 임시 폴더에 복사해 두고 그걸 넘긴다.
+            let name = url.lastPathComponent
+            let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-" + name)
+            let copied = await Task.detached(priority: .userInitiated) { () -> Bool in
+                guard let data = try? Data(contentsOf: url) else { return false }
+                return (try? data.write(to: temp)) != nil
+            }.value
+            guard copied else { continue }
+            let ok: Bool = await withCheckedContinuation { c in
+                PHPhotoLibrary.shared().performChanges({
+                    let options = PHAssetResourceCreationOptions()
+                    options.originalFilename = name
+                    let request = PHAssetCreationRequest.forAsset()
+                    request.addResource(with: .photo, fileURL: temp, options: options)
+                    if let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject,
+                       let placeholder = request.placeholderForCreatedAsset {
+                        PHAssetCollectionChangeRequest(for: album)?.addAssets([placeholder] as NSArray)
+                    }
+                }, completionHandler: { success, _ in c.resume(returning: success) })
+            }
+            try? FileManager.default.removeItem(at: temp)
+            if ok {
+                done += 1
+                progress(done)
+            }
+        }
+        return done
+    }
+
     /// 그 행사로 분류된 사진
     func assets(event id: String) -> [PHAsset] { all.filter { store.record(key(for: $0)).event == id } }
 
