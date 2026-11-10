@@ -329,6 +329,26 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         }.value
     }
 
+    /// 받은 사진 파일 하나를 사진첩에 저장하고 고른 앨범에 넣는다. 새로 생긴 사진의 로컬 ID 를 돌려준다.
+    func saveToAlbum(file: URL, name: String) async -> String? {
+        guard let sourceId, sourceIsAlbum else { return nil }
+        let created = Box<String?>(nil)
+        let ok: Bool = await withCheckedContinuation { c in
+            PHPhotoLibrary.shared().performChanges({
+                let options = PHAssetResourceCreationOptions()
+                options.originalFilename = name
+                let request = PHAssetCreationRequest.forAsset()
+                request.addResource(with: .photo, fileURL: file, options: options)
+                guard let placeholder = request.placeholderForCreatedAsset else { return }
+                created.value = placeholder.localIdentifier
+                if let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject {
+                    PHAssetCollectionChangeRequest(for: album)?.addAssets([placeholder] as NSArray)
+                }
+            }, completionHandler: { success, _ in c.resume(returning: success) })
+        }
+        return ok ? created.value : nil
+    }
+
     /// 불러올 곳이 (폴더가 아니라) 앨범인가 — 앨범이어야 사진을 담을 수 있다
     var sourceIsAlbum: Bool {
         sourceId.map { PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [$0], options: nil).firstObject != nil } ?? false

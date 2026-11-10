@@ -47,6 +47,7 @@ struct SettingsView: View {
     @State private var cleaning = false
     @State private var wiping = false
     @State private var sharing = false
+    @State private var viewing = false
 
     var body: some View {
         let o = store.catalog.opts
@@ -165,6 +166,7 @@ struct SettingsView: View {
         .sheet(isPresented: $theming) { ThemeSheet().presentationDetents([.medium, .large]) }
         .sheet(isPresented: $naming) { HomeNameSheet().presentationDetents([.medium]) }
         .sheet(isPresented: $choosingAlbum) { SetupView(firstRun: false) }
+        .sheet(isPresented: $viewing) { PendingSheet() }
         // 키는 이 기기에만 둔다 — 기록 파일에는 넣지 않는다
         .namePrompt("unavatar 키", placeholder: "퍼블리셔블 키", action: "저장", isPresented: $keying) { key in
             UserDefaults.standard.set(key, forKey: "fff.unavatar.pk")
@@ -180,6 +182,7 @@ struct SettingsView: View {
         .confirmationDialog("짝을 못 찾은 웹 기록 \(web.pending.count)장", isPresented: $dropping, titleVisibility: .visible) {
             Button("사진첩에서 찾아 앨범에 넣기") { findInLibrary() }
             Button("드라이브 사진과 비교해서 찾기") { sharing = true }
+            Button("남은 사진 보고 골라 받기") { viewing = true }
             Button("대기 기록 버리기", role: .destructive) { web.discardPending() }
             Button("취소", role: .cancel) {}
         } message: {

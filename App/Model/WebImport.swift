@@ -325,6 +325,22 @@ final class WebImport: ObservableObject {
         return done
     }
 
+    /// 그 드라이브 파일의 기록을, 기록 키가 가리키는 사진에 붙인다 (드라이브에서 직접 받은 사진에 쓴다)
+    func attach(fileId: String, key: String, store: CatalogStore) -> Bool {
+        guard let i = pending.firstIndex(where: { $0.fileId == fileId }) else { return false }
+        let p = pending.remove(at: i)
+        store.update([key]) { r in
+            if r.event == nil, store.event(p.record.event) != nil { r.event = p.record.event }
+            if r.shooter == nil, store.shooter(p.record.shooter) != nil { r.shooter = p.record.shooter }
+            for id in p.record.people where !r.people.contains(id) && store.person(id) != nil { r.people.append(id) }
+            for t in p.record.tags where !r.tags.contains(t) { r.tags.append(t) }
+            for u in p.record.usages where !r.usages.contains(where: { $0.url == u.url && $0.date == u.date }) { r.usages.append(u) }
+            if r.plannedAt == nil, r.usages.isEmpty { r.plannedAt = p.record.plannedAt }
+        }
+        save()
+        return true
+    }
+
     /// 그림으로 같은 사진임을 확인한 짝에 기록을 붙인다 (DriveCheck 가 쓴다)
     func attachVerified(_ pairs: [(fileId: String, asset: PHAsset)], library: PhotoLibrary, store: CatalogStore) -> Int {
         var done = 0
