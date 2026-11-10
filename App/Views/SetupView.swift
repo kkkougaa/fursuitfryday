@@ -2,7 +2,7 @@ import Photos
 import SwiftUI
 import UIKit
 
-/// 행사 사진을 모아 둔 앨범 고르기 + 드롭박스 연결. 처음 켤 때와, 설정에서 앨범을 바꿀 때 쓴다.
+/// 행사 사진을 모아 둔 앨범 고르기. 처음 켤 때와, 설정에서 앨범을 바꿀 때 쓴다.
 struct SetupView: View {
     var firstRun = false
 
