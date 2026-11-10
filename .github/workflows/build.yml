@@ -1,0 +1,307 @@
+# 맥 없이 빌드하기.
+#   build      : 컴파일 확인. main 이 아닌 브랜치는 여기서 끝 (무서명, ipa 안 만듦)
+#   testflight : main 에 합치면 정식 서명해서 TestFlight 에 올린다.
+#                App Store Connect API 키가 저장소 Secrets 에 아직 없으면 무서명 ipa 만 아티팩트로 남긴다.
+#
+# 필요한 Secrets (Settings → Secrets and variables → Actions)
+#   ASC_KEY_ID      App Store Connect 팀 API 키의 키 ID
+#   ASC_ISSUER_ID   발급자 ID (Issuer ID)
+#   ASC_KEY_P8      내려받은 AuthKey_XXXX.p8 파일 내용 전체 (-----BEGIN PRIVATE KEY----- 부터 끝까지)
+#   APPLE_TEAM_ID   개발자 계정 팀 ID (10자리)
+#   P12_BASE64      (선택) 배포 인증서 .p12 를 base64 로 바꾼 것
+#   P12_PASSWORD    (선택) 그 .p12 의 비밀번호
+name: Build · TestFlight
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 최신 Xcode 선택
+        run: |
+          XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "using $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: XcodeGen 설치
+        run: brew install xcodegen
+
+      - name: 프로젝트 생성
+        run: xcodegen generate --spec project.yml
+
+      - name: 빌드 (무서명 · 컴파일 확인)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project FursuitFryday.xcodeproj \
+            -scheme FursuitFryday \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee build.log
+
+      - name: 오류 요약
+        if: failure()
+        run: |
+          echo "===== error 줄 ====="
+          grep -n "error:" build.log | head -50 || true
+          echo "===== 마지막 80줄 ====="
+          tail -80 build.log
+          grep "error:" build.log | sed 's#.*/fursuitfryday-ios/fursuitfryday-ios/##' | sort -u | head -10 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done || true
+
+      - name: 빌드 로그 올리기
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+  testflight:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 최신 Xcode 선택
+        run: |
+          XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "using $XC"
+          sudo xcode-select -s "$XC"
+          xcodebuild -version
+
+      - name: XcodeGen 설치
+        run: brew install xcodegen
+
+      - name: 프로젝트 생성
+        run: xcodegen generate --spec project.yml
+
+      - name: API 키 확인
+        id: keys
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] && [ -n "$ASC_KEY_P8" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            mkdir -p "$RUNNER_TEMP/keys"
+            KEY="$RUNNER_TEMP/keys/AuthKey_${ASC_KEY_ID}.p8"
+            # 붙여 넣다가 줄바꿈이 빠지거나 머리·꼬리 줄이 없어도 되게, 본문만 뽑아 PEM 모양으로 다시 감싼다
+            BODY=$(printf '%s' "$ASC_KEY_P8" | tr -d '\r' | sed -e 's/-----[A-Z ]*-----//g' | tr -d ' \n\t')
+            { echo "-----BEGIN PRIVATE KEY-----"; printf '%s\n' "$BODY" | fold -w 64; echo "-----END PRIVATE KEY-----"; } > "$KEY"
+            if ! openssl pkey -in "$KEY" -noout 2>/dev/null; then
+              echo "::error::ASC_KEY_P8 을 키로 못 읽었다 (본문 ${#BODY}자, 보통 184자). .p8 파일 내용 전체를 다시 넣어 줘"
+              exit 1
+            fi
+            echo "path=$KEY" >> "$GITHUB_OUTPUT"
+            echo "ok=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::App Store Connect API 키가 Secrets 에 없어서 TestFlight 업로드를 건너뛰고 무서명 ipa 만 만든다"
+            echo "ok=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: App Store Connect 확인 (번들 ID · 앱)
+        if: steps.keys.outputs.ok == '1'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          python3 -m venv "$RUNNER_TEMP/asc"
+          "$RUNNER_TEMP/asc/bin/pip" install -q pyjwt cryptography
+          "$RUNNER_TEMP/asc/bin/python" .github/scripts/asc_check.py \
+            "${{ steps.keys.outputs.path }}" "$ASC_KEY_ID" "$ASC_ISSUER_ID" com.kouga.fursuitfryday FursuitFryday
+          # 지난 실행들이 남긴 개발용 인증서 정리 — 안 하면 팀 인증서 한도가 찬다
+          "$RUNNER_TEMP/asc/bin/python" .github/scripts/asc_certs.py \
+            "${{ steps.keys.outputs.path }}" "$ASC_KEY_ID" "$ASC_ISSUER_ID" stale
+
+      # 친구가 준 배포 인증서(p12)가 있으면 그걸로 서명한다 — 없거나 못 읽으면 자동 서명이 새로 만든다
+      - name: 인증서 가져오기 (p12, 있으면)
+        if: steps.keys.outputs.ok == '1'
+        env:
+          P12_BASE64: ${{ secrets.P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        run: |
+          if [ -z "$P12_BASE64" ]; then echo "p12 없음 — 자동 서명에 맡긴다"; exit 0; fi
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          PW=$(uuidgen)
+          security create-keychain -p "$PW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$PW" "$KC"
+          printf '%s' "$P12_BASE64" | tr -d '\r\n ' | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          if security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KC"; then
+            security set-key-partition-list -S apple-tool:,apple: -k "$PW" "$KC" > /dev/null
+            security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+            security find-identity -v -p codesigning "$KC"
+          else
+            echo "::warning::p12 를 못 읽었다 (비밀번호나 형식 확인). 자동 서명에 맡긴다"
+          fi
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      # ── 키가 있을 때: 정식 서명 → TestFlight ──
+      - name: 아카이브 (자동 서명)
+        if: steps.keys.outputs.ok == '1'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          # 빌드 번호는 실행 번호로 — TestFlight 는 같은 버전 안에서 번호가 늘어야 받는다
+          mkdir -p "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          run_archive() {
+            xcodebuild \
+              -project FursuitFryday.xcodeproj \
+              -scheme FursuitFryday \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -archivePath build/FursuitFryday.xcarchive \
+              -allowProvisioningUpdates \
+              -authenticationKeyPath "${{ steps.keys.outputs.path }}" \
+              -authenticationKeyID "$ASC_KEY_ID" \
+              -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+              DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+              CODE_SIGN_STYLE=Automatic \
+              CODE_SIGNING_ALLOWED=YES \
+              CODE_SIGNING_REQUIRED=YES \
+              CODE_SIGN_IDENTITY="Apple Development" \
+              CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+              archive 2>&1 | tee -a build.log
+          }
+          # 첫 실행은 프로필을 막 받아 오다가 파일을 못 찾고 떨어질 때가 있어서 한 번 더
+          run_archive || { echo "::warning::아카이브 다시 시도"; run_archive; }
+
+      - name: TestFlight 올리기
+        if: steps.keys.outputs.ok == '1'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -o pipefail
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath build/FursuitFryday.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${{ steps.keys.outputs.path }}" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            2>&1 | tee -a build.log
+          echo "::notice::TestFlight 에 빌드 ${{ github.run_number }} 를 올렸어. App Store Connect 에서 처리가 끝나면 테스터에게 간다"
+
+      - name: 이번 실행이 만든 개발용 인증서 정리
+        if: always() && steps.keys.outputs.ok == '1'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          security find-certificate -a -c "Apple Development" -p > "$RUNNER_TEMP/dev.pem" 2>/dev/null || true
+          SERIALS=$("$RUNNER_TEMP/asc/bin/python" -c "import sys; from cryptography import x509; print(' '.join(format(c.serial_number, 'X') for c in x509.load_pem_x509_certificates(open(sys.argv[1], 'rb').read())))" "$RUNNER_TEMP/dev.pem" 2>/dev/null || true)
+          echo "이번 실행의 개발용 인증서: ${SERIALS:-없음}"
+          [ -n "$SERIALS" ] || exit 0
+          "$RUNNER_TEMP/asc/bin/python" .github/scripts/asc_certs.py \
+            "${{ steps.keys.outputs.path }}" "$ASC_KEY_ID" "$ASC_ISSUER_ID" revoke $SERIALS
+
+      # ── 키가 없을 때: 무서명 ipa ──
+      - name: 무서명 빌드
+        if: steps.keys.outputs.ok != '1'
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project FursuitFryday.xcodeproj \
+            -scheme FursuitFryday \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee build.log
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          test -n "$APP"
+          rm -rf Payload && mkdir Payload
+          cp -R "$APP" Payload/
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "Payload/$(basename "$APP")/Info.plist" || echo dev)
+          zip -qr "FursuitFryday-${VERSION}-unsigned.ipa" Payload
+
+      - name: 무서명 ipa 올리기
+        if: steps.keys.outputs.ok != '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FursuitFryday-unsigned-ipa
+          path: "*.ipa"
+          if-no-files-found: error
+
+      - name: 오류 요약
+        if: failure()
+        run: |
+          echo "===== error 줄 ====="
+          grep -n "error:\|Error Domain\|No profiles\|provisioning" build.log | head -60 || true
+          echo "===== 마지막 80줄 ====="
+          tail -80 build.log
+          grep "error:" build.log | sed 's#.*/fursuitfryday-ios/fursuitfryday-ios/##' | sort -u | head -10 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done || true
+
+      - name: 빌드 로그 올리기
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-log
+          path: build.log
+
+  # 업로드 뒤 애플 처리 지켜보기 — App Store Connect 화면엔 처리 중일 때 아무것도 안 떠서 여기서 본다
+  processing:
+    needs: testflight
+    # 업로드에 실패해도 지금까지 올라간 빌드 목록은 본다
+    if: always() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: TestFlight 처리 지켜보기
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_ISSUER_ID" ] || [ -z "$ASC_KEY_P8" ]; then echo "API 키 없음"; exit 0; fi
+          KEY="$RUNNER_TEMP/AuthKey.p8"
+          BODY=$(printf '%s' "$ASC_KEY_P8" | tr -d '\r' | sed -e 's/-----[A-Z ]*-----//g' | tr -d ' \n\t')
+          { echo "-----BEGIN PRIVATE KEY-----"; printf '%s\n' "$BODY" | fold -w 64; echo "-----END PRIVATE KEY-----"; } > "$KEY"
+          pip install -q pyjwt cryptography
+          python3 .github/scripts/asc_builds.py "$KEY" "$ASC_KEY_ID" "$ASC_ISSUER_ID" com.kouga.fursuitfryday "${{ github.run_number }}" ${{ needs.testflight.result == 'success' && 30 || 0 }}
