@@ -56,6 +56,7 @@ struct ProfileView: View {
         }
         .background(Tone.bg)
         .navigationTitle("프로필")
+        .toolbarTitleDisplayMode(.inlineLarge)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(value: Route.settings) { Image(systemName: "slider.horizontal.3") }.accessibilityLabel("설정")
@@ -105,11 +106,11 @@ struct ProfileView: View {
 
 /// X 아이디를 고치면 프로필 사진을 새로 받는다. 실패해도 아이디는 저장된다.
 @MainActor
-func refreshAvatar(x: String?, apply: @escaping (Data) -> Void) {
+func refreshAvatar(x: String?, force: Bool = false, apply: @escaping (Data) -> Void) {
     guard let x else { return }
     Task {
         do {
-            let data = try await Avatars.fetch(x: x)
+            let data = try await Avatars.fetch(x: x, force: force)
             apply(data)
         } catch {
             toast(((error as? Avatars.Failure)?.text ?? "프로필 사진을 받아오지 못했어요") + " 아이디는 저장돼요.")

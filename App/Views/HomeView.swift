@@ -28,8 +28,20 @@ struct Suggestion: Identifiable {
     /// 같은 날이라도 이만큼 떨어져 있으면 다른 곳으로 본다
     private static let apart: CLLocationDistance = 3000
 
+    @MainActor private static var memo: (stamp: String, list: [Suggestion]) = ("", [])
+
+    /// 화면을 그릴 때마다 불리므로, 바뀐 게 없으면 지난 결과를 그대로 준다
     @MainActor
     static func build(library: PhotoLibrary, store: CatalogStore, meta: MetaStore) -> [Suggestion] {
+        let stamp = "\(store.catalog.updatedAt.timeIntervalSince1970)-\(library.all.count)-\(library.keys.count)-\(meta.metas.count)-\(later.count)"
+        if memo.stamp == stamp { return memo.list }
+        let list = compute(library: library, store: store, meta: meta)
+        memo = (stamp, list)
+        return list
+    }
+
+    @MainActor
+    private static func compute(library: PhotoLibrary, store: CatalogStore, meta: MetaStore) -> [Suggestion] {
         var learned: [String: [String: Int]] = [:]
         var byCamera: [String: [PHAsset]] = [:]
         var byDayEvent: [String: [PHAsset]] = [:]
@@ -103,14 +115,18 @@ struct Suggestion: Identifiable {
     @MainActor
     static func applyRules(library: PhotoLibrary, store: CatalogStore, meta: MetaStore) {
         let rules = store.catalog.rules
-        guard !rules.isEmpty else { return }
+        let named = store.catalog.shooters.filter { !($0.filePattern ?? "").isEmpty }
+        guard !rules.isEmpty || !named.isEmpty else { return }
         var byShooter: [String: [String]] = [:]
         for a in library.all {
             let key = library.key(for: a)
-            guard store.record(key).shooter == nil, let cam = meta.camera(a.localIdentifier), let id = rules[cam],
-                  store.shooter(id) != nil
-            else { continue }
-            byShooter[id, default: []].append(key)
+            guard store.record(key).shooter == nil else { continue }
+            // 사진사별 파일명 규칙이 먼저, 그다음 카메라 규칙
+            if let name = meta.names[a.localIdentifier], let s = named.first(where: { $0.matches(fileName: name) }) {
+                byShooter[s.id, default: []].append(key)
+            } else if let cam = meta.camera(a.localIdentifier), let id = rules[cam], store.shooter(id) != nil {
+                byShooter[id, default: []].append(key)
+            }
         }
         for (id, keys) in byShooter { store.update(keys) { $0.shooter = id } }
     }
@@ -120,6 +136,12 @@ private struct PersonRow: Identifiable {
     let person: Person
     let records: [PhotoRecord]
     var id: String { person.id }
+}
+
+/// "이 사진들이 이 퍼슈트 같아요" 묶음. id 는 퍼슈트(사람) ID.
+private struct SuitGroup: Identifiable {
+    let id: String
+    let assets: [PHAsset]
 }
 
 /// 새 행사로 묶을 사진들
@@ -135,7 +157,6 @@ struct HomeView: View {
 
     @EnvironmentObject private var library: PhotoLibrary
     @EnvironmentObject private var store: CatalogStore
-    @EnvironmentObject private var dropbox: DropboxSync
     @EnvironmentObject private var meta: MetaStore
     @ObservedObject private var places = PlaceNames.shared
     @State private var axis: Axis = .event
@@ -144,6 +165,9 @@ struct HomeView: View {
     @State private var making: MakeJob?
     @State private var always: Set<String> = []
     @State private var laterTick = 0
+    @State private var suitGroups: [SuitGroup] = []
+    @State private var suitReview: SuitGroup?
+    @State private var suitTick = 0
 
     private func record(_ a: PHAsset) -> PhotoRecord { store.record(library.key(for: a)) }
 
@@ -170,9 +194,10 @@ struct HomeView: View {
                     EmptyNote(text: "앨범에 사진이 없어요. 사진 앱에서 \"\(library.sourceTitle)\" 앨범에 사진을 넣어 주세요.")
                 }
 
-                if !suggestions.isEmpty {
-                    SectionHead("확인할 것", count: "\(suggestions.count)")
+                if !suggestions.isEmpty || !suitGroups.isEmpty {
+                    SectionHead("확인할 것", count: "\(suggestions.count + suitGroups.count)")
                     ForEach(suggestions.prefix(3)) { card($0) }
+                    ForEach(suitGroups.prefix(2)) { suitCard($0) }
                 }
 
                 if unfiled > 0 {
@@ -203,8 +228,18 @@ struct HomeView: View {
         }
         .background(Tone.bg)
         .navigationTitle(title)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { syncButton } }
-        .task(id: meta.metas.count) { Suggestion.applyRules(library: library, store: store, meta: meta) }
+        .toolbarTitleDisplayMode(.inlineLarge)
+        .task(id: "\(meta.metas.count)-\(meta.names.count)-\(library.all.count)") {
+            Suggestion.applyRules(library: library, store: store, meta: meta)
+            let linked = WebImport.shared.match(library: library, store: store, meta: meta)
+            if linked > 0 { toast("웹 기록 \(linked)장을 사진에 연결했어요") }
+        }
+        .task(id: "\(library.all.count)-\(store.catalog.people.count)-\(suitTick)") { await scanSuits() }
+        .sheet(item: $suitReview) { g in
+            ReviewSheet(title: "\(store.person(g.id)?.name ?? "") 인가요?", assets: g.assets, label: { "\($0)장에 붙이기" }) { chosen in
+                acceptSuit(g, chosen)
+            }
+        }
         .sheet(item: $reviewing, onDismiss: {
             // 훑어보기가 닫힌 뒤에 다음 시트를 올린다 — 동시에 두 장은 못 띄운다
             making = pendingMake
@@ -352,6 +387,79 @@ struct HomeView: View {
         toast(out > 0 ? "\(keys.count)장 적용 · \(out)장 제외" : "\(keys.count)장에 적용했어요")
     }
 
+    // MARK: 퍼슈트 묶음 제안
+
+    /// 앨범을 조금씩 훑어 "이 사진들이 ○○ 같아요" 묶음을 만든다. 사진 앱의 인물 확인과 같은 흐름이다.
+    private func scanSuits() async {
+        let items = library.all.map { a -> (key: String, localId: String, people: [String]) in
+            let key = library.key(for: a)
+            return (key: key, localId: a.localIdentifier, people: store.record(key).people)
+        }
+        let singles = items.filter { $0.people.count == 1 }.map { (key: $0.key, localId: $0.localId, suitId: $0.people[0]) }
+        guard !singles.isEmpty else {
+            suitGroups = []
+            return
+        }
+        await SuitMatcher.shared.reindex(singles)
+        let result = await SuitMatcher.shared.groups(items, budget: 60)
+        suitGroups = result.found.compactMap { id, locals -> SuitGroup? in
+            let assets = locals.compactMap { library.byId[$0] }
+            // 한두 장은 사진 상세에서 칩으로 충분하다. 묶음은 세 장부터.
+            return assets.count >= 3 && store.person(id) != nil ? SuitGroup(id: id, assets: assets) : nil
+        }
+        .sorted { $0.assets.count > $1.assets.count }
+        // 아직 안 훑은 사진이 남았으면 잠깐 쉬었다가 이어서 한다
+        if result.left > 0 {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if !Task.isCancelled { suitTick += 1 }
+        }
+    }
+
+    private func suitCard(_ g: SuitGroup) -> some View {
+        let name = store.person(g.id)?.name ?? ""
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("닮은 사진 \(g.assets.count)장").font(.system(size: 13)).foregroundStyle(Tone.g600)
+            Text("이 사진들이 \(name) 인가요?").font(.system(size: 17, weight: .bold)).foregroundStyle(Tone.g900)
+            HStack(spacing: 6) {
+                ForEach(g.assets.prefix(4), id: \.localIdentifier) { a in
+                    Thumb(asset: a, side: 80).frame(height: 80).frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+            HStack(spacing: 10) {
+                Button("아니요") {
+                    // 전부 아니라고 알려 주면 이 퍼슈트는 다음부터 더 조심스럽게 추천한다
+                    let pairs = g.assets.map { (localId: $0.localIdentifier, key: library.key(for: $0)) }
+                    suitGroups.removeAll { $0.id == g.id }
+                    Task {
+                        for p in pairs { await SuitMatcher.shared.reject(localId: p.localId, key: p.key, suitId: g.id) }
+                    }
+                }
+                .buttonStyle(FillButtonStyle())
+                Button("확인하기") { suitReview = g }
+                    .font(.system(size: 15, weight: .bold)).foregroundStyle(Tone.onBlue)
+                    .frame(maxWidth: .infinity).frame(height: 48)
+                    .background(Tone.blue, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .background(Tone.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Tone.fill, lineWidth: 2))
+    }
+
+    private func acceptSuit(_ g: SuitGroup, _ chosen: [PHAsset]) {
+        let picked = Set(chosen.map(\.localIdentifier))
+        store.update(chosen.map { library.key(for: $0) }) { if !$0.people.contains(g.id) { $0.people.append(g.id) } }
+        // 뺀 사진은 "아니야"로 기억한다
+        let refused = g.assets.filter { !picked.contains($0.localIdentifier) }.map { (localId: $0.localIdentifier, key: library.key(for: $0)) }
+        suitGroups.removeAll { $0.id == g.id }
+        Task {
+            for p in refused { await SuitMatcher.shared.reject(localId: p.localId, key: p.key, suitId: g.id) }
+        }
+        toast("\(store.person(g.id)?.name ?? "") · \(chosen.count)장")
+    }
+
     // MARK: 목록
 
     @ViewBuilder
@@ -451,24 +559,6 @@ struct HomeView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 9)
         .contentShape(Rectangle())
-    }
-
-    // MARK: 드롭박스 상태
-
-    @ViewBuilder
-    private var syncButton: some View {
-        if dropbox.linked {
-            Button {
-                Task { await dropbox.sync() }
-            } label: {
-                switch dropbox.phase {
-                case .syncing: ProgressView()
-                case .failed: Image(systemName: "exclamationmark.icloud").foregroundStyle(Tone.amber)
-                case .idle: Image(systemName: store.dirty ? "icloud.and.arrow.up" : "checkmark.icloud").foregroundStyle(Tone.g600)
-                }
-            }
-            .accessibilityLabel("드롭박스 동기화")
-        }
     }
 }
 

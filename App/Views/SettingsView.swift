@@ -1,75 +1,167 @@
 import Photos
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
-// 설정과 그 안의 화면들 — 테마, 홈 이름, 사람 관리, 카테고리·태그, 복사 템플릿
+// 설정과 그 안의 화면들 — 테마, 홈 이름, 사람 관리, 카테고리·태그, 복사 템플릿, 기록 내보내기·가져오기
+
+/// 설정 한 줄 — 색 네모 안의 아이콘, 제목, 오른쪽 값
+private struct SettingLabel: View {
+    let icon: String
+    let color: String
+    let title: String
+    var value: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(TagColor.pair(color).text, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text(title).font(.system(size: 16)).foregroundStyle(Tone.g900)
+            Spacer(minLength: 8)
+            if let value { Text(value).font(.system(size: 15)).foregroundStyle(Tone.g600).lineLimit(1) }
+        }
+    }
+}
 
 struct SettingsView: View {
     @EnvironmentObject private var store: CatalogStore
     @EnvironmentObject private var library: PhotoLibrary
+    @EnvironmentObject private var meta: MetaStore
+    @ObservedObject private var web = WebImport.shared
     @State private var theming = false
     @State private var naming = false
-    @State private var choosingFolder = false
+    @State private var choosingAlbum = false
     @State private var keying = false
+    @State private var importing = false
+    @State private var dropping = false
 
     var body: some View {
         let o = store.catalog.opts
-        ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionHead("표시")
-                Button { theming = true } label: { ListRow("테마 색", value: Accent.name(o)) }.buttonStyle(.plain)
-                Button { naming = true } label: {
-                    ListRow("홈 화면 이름", value: o.homeTitle.isEmpty ? "모아보기" : o.homeTitle)
+        List {
+            Section("표시") {
+                button("paintpalette.fill", "pink", "테마 색", Accent.name(o)) { theming = true }
+                button("textformat", "blue", "홈 화면 이름", o.homeTitle.isEmpty ? "모아보기" : o.homeTitle) { naming = true }
+                Toggle(isOn: Binding(get: { o.friday }, set: { on in store.edit { $0.opts.friday = on } })) {
+                    SettingLabel(icon: "calendar.badge.clock", color: "amber", title: "금요일 블록")
                 }
-                .buttonStyle(.plain)
-                SwitchRow(title: "금요일 블록", isOn: Binding(get: { o.friday }, set: { on in store.edit { $0.opts.friday = on } }))
-
-                SectionHead("사진첩과 백업")
-                Button { choosingFolder = true } label: {
-                    ListRow("사진첩 앨범", value: library.sourceTitle.isEmpty ? "고르기" : library.sourceTitle)
-                }
-                .buttonStyle(.plain)
-                DropboxRow().padding(.top, 4)
-
-                SectionHead("사람과 퍼슈트")
-                NavigationLink(value: Route.shooters) { ListRow("사진사", value: "\(store.catalog.shooters.count)명") }.buttonStyle(.plain)
-                NavigationLink(value: Route.people) { ListRow("같이 찍은 퍼슈트", value: "\(store.catalog.people.count)명") }.buttonStyle(.plain)
-
-                SectionHead("일정")
-                NavigationLink(value: Route.packing) { ListRow("짐 챙기기 목록", value: "\(store.catalog.packing.count)개") }.buttonStyle(.plain)
-                NavigationLink(value: Route.categories) { ListRow("행사 카테고리", value: "\(store.catalog.eventTags.count)개") }.buttonStyle(.plain)
-                NavigationLink(value: Route.careTags) { ListRow("관리 태그", value: "\(store.catalog.careTags.count)개") }.buttonStyle(.plain)
-
-                SectionHead("태그와 복사")
-                NavigationLink(value: Route.tagBrowse) { ListRow("태그로 찾기") }.buttonStyle(.plain)
-                NavigationLink(value: Route.tagManage) { ListRow("태그 관리", value: "\(store.catalog.tags.count)개") }.buttonStyle(.plain)
-                NavigationLink(value: Route.copyTemplate) {
-                    ListRow("복사 템플릿", value: "해시태그 \(o.tags.count)개 · 작가 아이디 \(o.prefix)")
-                }
-                .buttonStyle(.plain)
-
-                SectionHead("키")
-                Button { keying = true } label: {
-                    ListRow("unavatar 키", value: (UserDefaults.standard.string(forKey: "fff.unavatar.pk") ?? "").isEmpty ? "없음" : "저장됨")
-                }
-                .buttonStyle(.plain)
-
-                Text("버전 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
-                    .font(.system(size: 13)).foregroundStyle(Tone.g600)
-                    .frame(maxWidth: .infinity).padding(.top, 24)
+                .tint(Tone.green)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 24)
+
+            Section("사진") {
+                button("rectangle.stack.fill", "teal", "사진첩 앨범", library.sourceTitle.isEmpty ? "고르기" : library.sourceTitle) {
+                    choosingAlbum = true
+                }
+            }
+
+            Section("사람과 퍼슈트") {
+                link(.shooters, "camera.fill", "purple", "사진사", "\(store.catalog.shooters.filter { !$0.unknown }.count)명")
+                link(.people, "pawprint.fill", "green", "같이 찍은 퍼슈트", "\(store.catalog.people.count)명")
+            }
+
+            Section("일정") {
+                link(.packing, "bag.fill", "amber", "짐 챙기기 목록", "\(store.catalog.packing.count)개")
+                link(.categories, "tag.fill", "red", "행사 카테고리", "\(store.catalog.eventTags.count)개")
+                link(.careTags, "sparkles", "teal", "관리 태그", "\(store.catalog.careTags.count)개")
+            }
+
+            Section("태그와 복사") {
+                link(.tagBrowse, "magnifyingglass", "blue", "태그로 찾기", nil)
+                link(.tagManage, "number", "purple", "태그 관리", "\(store.catalog.tags.count)개")
+                link(.copyTemplate, "doc.on.doc.fill", "green", "복사 템플릿", "해시태그 \(o.tags.count)개 · \(o.prefix)")
+            }
+
+            Section {
+                button("square.and.arrow.up", "blue", "기록 내보내기", nil) { export() }
+                button("square.and.arrow.down", "green", "기록 가져오기", nil) { importing = true }
+                if !web.pending.isEmpty {
+                    button("clock.arrow.circlepath", "amber", "웹 기록 대기", "\(web.pending.count)장") { dropping = true }
+                }
+            } header: {
+                Text("기록")
+            } footer: {
+                Text("기록은 이 기기에만 있고 아이폰 백업에 포함됩니다. 가져오기는 이 앱에서 내보낸 파일과 웹 버전의 기록 파일(fursuitfryday.catalog.json)을 모두 받습니다.")
+            }
+
+            Section {
+                button("key.fill", "gray", "unavatar 키", (UserDefaults.standard.string(forKey: "fff.unavatar.pk") ?? "").isEmpty ? "없음" : "저장됨") {
+                    keying = true
+                }
+            } header: {
+                Text("키")
+            } footer: {
+                Text("버전 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 12)
+            }
         }
-        .background(Tone.bg)
+        .listStyle(.insetGrouped)
         .navigationTitle("설정")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $theming) { ThemeSheet().presentationDetents([.medium, .large]) }
         .sheet(isPresented: $naming) { HomeNameSheet().presentationDetents([.medium]) }
-        .sheet(isPresented: $choosingFolder) { SetupView(firstRun: false) }
-        // 키는 이 기기에만 둔다 — 기록 파일(드롭박스)에는 넣지 않는다
+        .sheet(isPresented: $choosingAlbum) { SetupView(firstRun: false) }
+        // 키는 이 기기에만 둔다 — 기록 파일에는 넣지 않는다
         .namePrompt("unavatar 키", placeholder: "퍼블리셔블 키", action: "저장", isPresented: $keying) { key in
             UserDefaults.standard.set(key, forKey: "fff.unavatar.pk")
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+            if case .success(let url) = result { load(url) } else { toast("파일을 열지 못했어요") }
+        }
+        .confirm("짝을 못 찾은 웹 기록 \(web.pending.count)장",
+                 message: "웹 버전에서 가져온 사진 기록 가운데, 같은 파일 이름의 사진이 아직 앨범에 없는 것들입니다. 그 사진이 앨범에 들어오면 저절로 붙습니다. 버리면 다시 가져와야 합니다.",
+                 action: "대기 기록 버리기", isPresented: $dropping) {
+            web.discardPending()
+        }
+    }
+
+    private func button(_ icon: String, _ color: String, _ title: String, _ value: String?, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) { SettingLabel(icon: icon, color: color, title: title, value: value) }
+    }
+
+    private func link(_ route: Route, _ icon: String, _ color: String, _ title: String, _ value: String?) -> some View {
+        NavigationLink(value: route) { SettingLabel(icon: icon, color: color, title: title, value: value) }
+    }
+
+    /// 기록 파일을 공유 시트로 내보낸다 — 파일 앱·에어드롭·메일 어디로든
+    private func export() {
+        guard let data = try? Catalog.encode(store.catalog) else {
+            toast("기록을 내보내지 못했어요")
+            return
+        }
+        let name = "fursuitfryday-\(Day.today).json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        do {
+            try data.write(to: url, options: .atomic)
+            Share.present([url]) { _ in }
+        } catch {
+            toast("기록을 내보내지 못했어요")
+        }
+    }
+
+    /// 이 앱의 기록 파일이면 합치고, 웹 버전의 기록 파일이면 옮겨 온다
+    private func load(_ url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else {
+            toast("파일을 읽지 못했어요")
+            return
+        }
+        if WebImport.looksLikeWeb(data) {
+            do {
+                let summary = try web.run(data, store: store)
+                let linked = web.match(library: library, store: store, meta: meta)
+                toast("웹 기록을 가져왔어요 · \(summary) · 연결 \(linked)장")
+            } catch {
+                toast("웹 기록 파일을 읽지 못했어요")
+            }
+        } else if let other = try? Catalog.decode(data) {
+            store.importNative(other)
+            toast("기록을 합쳤어요 · 사진 \(other.photos.count)장")
+        } else {
+            toast("기록 파일이 아니에요")
         }
     }
 }
@@ -166,6 +258,7 @@ struct PeopleListView: View {
         let role: String?
         let avatar: Data?
         let count: Int
+        var pattern: String?
     }
 
     @EnvironmentObject private var store: CatalogStore
@@ -177,7 +270,8 @@ struct PeopleListView: View {
         switch kind {
         case .shooter:
             return store.catalog.shooters.filter { !$0.unknown }.sorted { $0.name < $1.name }.map { s in
-                Entry(id: s.id, name: s.name, x: s.x, role: nil, avatar: s.avatar, count: records.filter { $0.shooter == s.id }.count)
+                Entry(id: s.id, name: s.name, x: s.x, role: nil, avatar: s.avatar, count: records.filter { $0.shooter == s.id }.count,
+                      pattern: s.filePattern)
             }
         case .person:
             return store.catalog.people.sorted { $0.name < $1.name }.map { p in
@@ -227,12 +321,17 @@ struct EntitySheet: View {
     @State private var name = ""
     @State private var role = ""
     @State private var x = ""
+    @State private var pattern = ""
 
     var body: some View {
         SheetBody(title: entry.name) {
             Field(label: "이름", text: $name)
             if kind == .person { Field(label: "역할 (선택)", text: $role, placeholder: "예: 주최") }
             Field(label: "X 아이디 (선택)", text: $x, placeholder: "@handle 또는 x.com/handle", plain: true)
+            if kind == .shooter {
+                // 이 사진사가 주는 파일 이름의 모양. 맞는 사진은 묻지 않고 이 사진사로 채운다.
+                Field(label: "파일명 규칙 (선택)", text: $pattern, placeholder: "예: HARU_ 또는 *_haru*", plain: true)
+            }
             Button("저장") { save(refetch: false) }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -246,6 +345,7 @@ struct EntitySheet: View {
             name = entry.name
             role = entry.role ?? ""
             x = entry.x ?? ""
+            pattern = entry.pattern ?? ""
         }
     }
 
@@ -259,6 +359,7 @@ struct EntitySheet: View {
         let id = entry.id
         let isShooter = kind == .shooter
         let roleText = role.trimmingCharacters(in: .whitespaces)
+        let rule = pattern.trimmingCharacters(in: .whitespaces)
         let setAvatar: (Data?) -> Void = { data in
             store.edit { c in
                 if isShooter {
@@ -275,6 +376,7 @@ struct EntitySheet: View {
                 if let i = c.shooters.firstIndex(where: { $0.id == id }) {
                     c.shooters[i].name = title
                     c.shooters[i].x = handle
+                    c.shooters[i].filePattern = rule.isEmpty ? nil : rule
                 }
             } else if let i = c.people.firstIndex(where: { $0.id == id }) {
                 c.people[i].name = title
@@ -287,7 +389,7 @@ struct EntitySheet: View {
             }
         }
         if handle == nil { setAvatar(nil) }
-        if refetch || handle != entry.x { refreshAvatar(x: handle) { setAvatar($0) } }
+        if refetch || handle != entry.x { refreshAvatar(x: handle, force: refetch) { setAvatar($0) } }
         toast("저장했어요")
         dismiss()
     }

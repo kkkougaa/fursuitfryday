@@ -39,9 +39,6 @@ targets:
         # HTTPS 외 암호화를 안 쓴다 — TestFlight 업로드 때 수출 규정 질문을 건너뛴다
         ITSAppUsesNonExemptEncryption: false
         NSPhotoLibraryUsageDescription: 사진첩의 폴더에서 행사 사진을 불러와 사용 기록을 남깁니다. 사진은 고치지 않습니다.
-        # 드롭박스 앱 콘솔(App folder 방식)에서 받은 App key. 비어 있으면 드롭박스 연결이 꺼진다.
-        # 공개 클라이언트(PKCE)라 비밀 값이 아니다.
-        DropboxAppKey: ""
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kouga.fursuitfryday

@@ -122,21 +122,20 @@ struct PhotoView: View {
                         .font(.system(size: 20, weight: .medium))
                         .foregroundStyle(r.isPlanned ? Tone.amber : Tone.g700)
                         .frame(width: 56, height: 56)
-                        .background(Tone.fill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .liquidGlassRect(cornerRadius: 18)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(r.isPlanned ? "업로드 후보에서 빼기" : "업로드 후보로 담기")
                 .sensoryFeedback(.selection, trigger: r.isPlanned)
 
-                Button("사용하기") { using = true }.buttonStyle(PrimaryButtonStyle())
+                Button("사용하기") { using = true }.buttonStyle(GlassPrimaryButtonStyle())
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
-            .background(Tone.bg)
         }
         .sheet(isPresented: $using) {
             UseSheet(asset: asset, recordKey: key, eventName: event?.name)
-                .presentationDetents([.fraction(0.78), .large])
+                .presentationDetents([.large])
         }
         .sheet(isPresented: $tagging) { TagApplySheet(keys: [key]).presentationDetents([.medium]) }
         .namePrompt("새 행사", placeholder: "예: 케이퍼리 2026", isPresented: $addingEvent) { name in
@@ -350,8 +349,34 @@ struct UseSheet: View {
     @State private var link = ""
     @State private var busy = false
     @State private var copied = 0
+    /// 고른 태그는 기기에 기억해 둔다 — 매번 같은 걸 다시 고르지 않게
+    @AppStorage("fff.use.tags") private var picked = "#FursuitFriday"
+    @AppStorage("fff.use.event") private var withEvent = true
+    @AppStorage("fff.use.credit") private var withCredit = true
 
-    private var caption: String { store.copyText(shooter: store.record(recordKey).shooter, eventName: eventName) }
+    /// 고를 수 있는 태그. 금요일 태그는 Friday 다(앱 이름의 Fryday 가 아니다).
+    private static let choices = ["#FursuitFriday", "#FursuitEveryday"]
+
+    private var chosen: [String] { Self.choices.filter { picked.components(separatedBy: ",").contains($0) } }
+    private var eventTag: String? { eventName.map(hashtagify).flatMap { $0.isEmpty ? nil : $0 } }
+    private var credit: String? { store.credit(store.record(recordKey).shooter) }
+
+    /// 태그 줄 + (켰으면) 맨 마지막 줄에 사진사
+    private var caption: String {
+        var tags = chosen
+        if withEvent, let eventTag { tags.append(eventTag) }
+        // 복사 템플릿에 넣어 둔 기본 해시태그도 이어 붙인다
+        for t in store.catalog.opts.tags where !tags.contains(t) { tags.append(t) }
+        var lines = [tags.joined(separator: " ")]
+        if withCredit, let credit { lines.append(credit) }
+        return lines.filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    private func toggle(_ tag: String) {
+        var now = chosen
+        if now.contains(tag) { now.removeAll { $0 == tag } } else { now.append(tag) }
+        picked = now.joined(separator: ",")
+    }
 
     var body: some View {
         SheetBody(title: "사용하기") {
@@ -366,6 +391,19 @@ struct UseSheet: View {
             }
             .padding(14)
             .background(Tone.fill, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+            FlowLayout(spacing: 8) {
+                ForEach(Self.choices, id: \.self) { tag in
+                    Chip(title: tag, on: chosen.contains(tag)) { toggle(tag) }
+                }
+                Chip(title: eventTag ?? "행사 이름", on: withEvent && eventTag != nil) { withEvent.toggle() }
+                    .disabled(eventTag == nil)
+                    .opacity(eventTag == nil ? 0.45 : 1)
+                Chip(title: credit ?? "사진사", on: withCredit && credit != nil) { withCredit.toggle() }
+                    .disabled(credit == nil)
+                    .opacity(credit == nil ? 0.45 : 1)
+            }
+            .sensoryFeedback(.selection, trigger: caption)
 
             Button {
                 share()

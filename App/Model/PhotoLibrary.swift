@@ -7,7 +7,8 @@ struct SourceInfo: Identifiable {
     let id: String
     let title: String
     let isFolder: Bool
-    let photoCount: Int
+    /// 대략의 장수. 사진첩이 바로 알려주지 않으면 nil.
+    let photoCount: Int?
 }
 
 private final class Box<V>: @unchecked Sendable {
@@ -33,6 +34,8 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     private let store: CatalogStore
     private let images = PHCachingImageManager()
     private var observing = false
+    private var loading = false
+    private var again = false
     private let keysURL: URL
 
     init(store: CatalogStore) {
@@ -75,14 +78,14 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
 
     // MARK: 불러올 곳
 
-    private static var imageOptions: PHFetchOptions {
+    nonisolated private static var imageOptions: PHFetchOptions {
         let o = PHFetchOptions()
         o.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
         o.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         return o
     }
 
-    private static func albums(in list: PHCollectionList) -> [PHAssetCollection] {
+    nonisolated private static func albums(in list: PHCollectionList) -> [PHAssetCollection] {
         var out: [PHAssetCollection] = []
         PHCollection.fetchCollections(in: list, options: nil).enumerateObjects { c, _, _ in
             if let album = c as? PHAssetCollection { out.append(album) }
@@ -90,7 +93,7 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         return out
     }
 
-    private static func assets(in album: PHAssetCollection) -> [PHAsset] {
+    nonisolated private static func assets(in album: PHAssetCollection) -> [PHAsset] {
         let result = PHAsset.fetchAssets(in: album, options: imageOptions)
         var out: [PHAsset] = []
         out.reserveCapacity(result.count)
@@ -98,20 +101,27 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         return out
     }
 
-    /// 사진첩 맨 위에 있는 앨범과 폴더
-    func sources() -> [SourceInfo] {
+    /// 사진첩 맨 위에 있는 앨범과 폴더. 장수를 정확히 세면 사진이 많을 때 화면이 멈추므로
+    /// 사진첩이 알고 있는 어림값만 쓰고, 그것도 뒤에서 읽는다.
+    func sources() async -> [SourceInfo] {
         guard status == .authorized else { return [] }
-        var out: [SourceInfo] = []
-        PHCollectionList.fetchTopLevelUserCollections(with: nil).enumerateObjects { c, _, _ in
-            if let album = c as? PHAssetCollection {
-                out.append(SourceInfo(id: album.localIdentifier, title: album.localizedTitle ?? "이름 없는 앨범", isFolder: false,
-                                      photoCount: PHAsset.fetchAssets(in: album, options: Self.imageOptions).count))
-            } else if let list = c as? PHCollectionList {
-                let count = Self.albums(in: list).reduce(0) { $0 + PHAsset.fetchAssets(in: $1, options: Self.imageOptions).count }
-                out.append(SourceInfo(id: list.localIdentifier, title: list.localizedTitle ?? "이름 없는 폴더", isFolder: true, photoCount: count))
+        return await Task.detached(priority: .userInitiated) {
+            func rough(_ album: PHAssetCollection) -> Int? {
+                album.estimatedAssetCount == NSNotFound ? nil : album.estimatedAssetCount
             }
-        }
-        return out
+            var out: [SourceInfo] = []
+            PHCollectionList.fetchTopLevelUserCollections(with: nil).enumerateObjects { c, _, _ in
+                if let album = c as? PHAssetCollection {
+                    out.append(SourceInfo(id: album.localIdentifier, title: album.localizedTitle ?? "이름 없는 앨범", isFolder: false,
+                                          photoCount: rough(album)))
+                } else if let list = c as? PHCollectionList {
+                    let counts = Self.albums(in: list).map(rough)
+                    out.append(SourceInfo(id: list.localIdentifier, title: list.localizedTitle ?? "이름 없는 폴더", isFolder: true,
+                                          photoCount: counts.contains { $0 == nil } ? nil : counts.compactMap { $0 }.reduce(0, +)))
+                }
+            }
+            return out
+        }.value
     }
 
     func createAlbum(_ title: String) async throws -> String {
@@ -140,21 +150,39 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
 
     // MARK: 불러오기
 
+    /// 사진 목록은 뒤에서 읽는다 — 수천 장을 화면 쪽에서 훑으면 앱이 멈춘다.
+    /// 읽는 중에 또 불리면 끝난 뒤 한 번만 더 읽는다.
     func reload() {
         guard status == .authorized, let sourceId else {
             all = []
             byId = [:]
             return
         }
-        var found: [PHAsset] = []
-        if let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject {
-            sourceTitle = album.localizedTitle ?? ""
-            found = Self.assets(in: album)
-        } else if let list = PHCollectionList.fetchCollectionLists(withLocalIdentifiers: [sourceId], options: nil).firstObject {
-            // 폴더를 골랐으면 그 안 앨범들의 사진을 한데 모은다
-            sourceTitle = list.localizedTitle ?? ""
-            found = Self.albums(in: list).flatMap { Self.assets(in: $0) }
+        if loading {
+            again = true
+            return
         }
+        loading = true
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let (title, found) = Self.fetch(sourceId)
+            await self?.finish(title, found)
+        }
+    }
+
+    nonisolated private static func fetch(_ sourceId: String) -> (String, [PHAsset]) {
+        if let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject {
+            return (album.localizedTitle ?? "", assets(in: album))
+        }
+        if let list = PHCollectionList.fetchCollectionLists(withLocalIdentifiers: [sourceId], options: nil).firstObject {
+            // 폴더를 골랐으면 그 안 앨범들의 사진을 한데 모은다
+            return (list.localizedTitle ?? "", albums(in: list).flatMap { assets(in: $0) })
+        }
+        return ("", [])
+    }
+
+    private func finish(_ title: String, _ found: [PHAsset]) {
+        loading = false
+        sourceTitle = title
         var seen: [String: PHAsset] = [:]
         var flat: [PHAsset] = []
         for a in found where seen[a.localIdentifier] == nil {
@@ -167,7 +195,13 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             all = flat
         }
         resolveKeys()
-        MetaStore.shared.sweep(flat.map(\.localIdentifier))
+        let ids = flat.map(\.localIdentifier)
+        MetaStore.shared.indexNames(ids)
+        MetaStore.shared.sweep(ids)
+        if again {
+            again = false
+            reload()
+        }
     }
 
     /// 그 행사로 분류된 사진

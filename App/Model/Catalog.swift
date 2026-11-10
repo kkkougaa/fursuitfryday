@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 // 기록(DB)의 모양. 사진 파일은 읽기만 하고, 태그·사용 이력·일정은 전부 여기에만 있다.
-// 드롭박스에 올라가는 catalog.json 이 이 구조 그대로다. 웹 버전 catalog 의 뼈대를 따랐다.
+// 내보내기로 나가는 catalog.json 이 이 구조 그대로다. 웹 버전 catalog 의 뼈대를 따랐다.
 //
 // ⚠ 디코더는 자동 생성이라 없는 키를 만나면 실패한다. 나중에 필드를 더할 때는 옵셔널로 넣는다.
 
@@ -42,6 +42,31 @@ struct Shooter: Codable, Hashable, Identifiable {
     /// 96px JPEG
     var avatar: Data?
     var unknown = false
+    /// 이 사진사가 주는 파일의 이름 규칙. "HARU_" 처럼 앞부분, 또는 "*_haru*" 처럼 별표를 쓴 모양.
+    /// 맞는 사진은 묻지 않고 이 사진사로 채운다.
+    var filePattern: String?
+
+    /// 파일 이름이 규칙에 맞는가 (대소문자 무시)
+    func matches(fileName: String) -> Bool {
+        guard let rule = filePattern?.trimmingCharacters(in: .whitespaces).lowercased(), !rule.isEmpty else { return false }
+        let name = fileName.lowercased()
+        guard rule.contains("*") else { return name.hasPrefix(rule) }
+        // 별표는 "아무 글자나". 조각들이 순서대로 다 나오면 맞는 것으로 본다.
+        let parts = rule.components(separatedBy: "*")
+        var rest = Substring(name)
+        for (i, part) in parts.enumerated() where !part.isEmpty {
+            if i == 0 {
+                guard rest.hasPrefix(part) else { return false }
+                rest = rest.dropFirst(part.count)
+            } else if i == parts.count - 1 {
+                return rest.hasSuffix(part)
+            } else {
+                guard let r = rest.range(of: part) else { return false }
+                rest = rest[r.upperBound...]
+            }
+        }
+        return true
+    }
 }
 
 /// 사진에 같이 찍힌 퍼슈트(사람). 내 퍼슈트는 Suit 가 짝으로 가리킨다.
@@ -209,7 +234,7 @@ func hashtagify(_ text: String) -> String {
 @MainActor
 final class CatalogStore: ObservableObject {
     @Published private(set) var catalog = Catalog()
-    /// 드롭박스에 아직 안 올라간 변경이 있다
+    /// 마지막으로 내보낸 뒤에 바뀐 것이 있다
     @Published private(set) var dirty = UserDefaults.standard.bool(forKey: "fff.dirty")
     /// 읽기에 실패한 파일이 있었다 — 덮어쓰기 전에 옆에 보관해 둔다
     @Published private(set) var loadError: String?
@@ -269,7 +294,7 @@ final class CatalogStore: ObservableObject {
         touch()
     }
 
-    /// 지운 표시를 남긴다 — 드롭박스와 합칠 때 되살아나지 않게
+    /// 지운 표시를 남긴다 — 다른 기록 파일과 합칠 때 되살아나지 않게
     func markDeleted(_ kind: String, _ key: String) {
         let mark = "\(kind):\(key)"
         if !catalog.deleted.contains(mark) { catalog.deleted.append(mark) }
@@ -363,7 +388,12 @@ final class CatalogStore: ObservableObject {
         if changed { touch() }
     }
 
-    /// 드롭박스와 합친 결과로 바꾼다
+    /// 내보내 둔 기록 파일을 지금 기록과 합친다
+    func importNative(_ other: Catalog) {
+        edit { $0 = Catalog.merge($0, other) }
+    }
+
+    /// 합친 결과로 통째로 바꾼다
     func replace(with merged: Catalog) {
         guard merged != catalog else { return }
         catalog = merged

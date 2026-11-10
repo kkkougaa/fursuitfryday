@@ -136,6 +136,7 @@ struct PhotosView: View {
         }
         .background(Tone.bg)
         .navigationTitle(title)
+        .toolbarTitleDisplayMode(isTab ? .inlineLarge : .inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if selecting {
@@ -149,7 +150,12 @@ struct PhotosView: View {
                             Text("묶지 않기").tag("none")
                         }
                     } label: {
-                        Image(systemName: "rectangle.3.group")
+                        // 지금 무엇으로 묶여 있는지 글자로 보여준다
+                        HStack(spacing: 3) {
+                            Text(["event": "행사별", "shooter": "사진사별", "person": "퍼슈트별"][group] ?? "묶지 않음")
+                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .bold))
+                        }
+                        .font(.system(size: 15, weight: .semibold))
                     }
                     .accessibilityLabel("묶어 보기")
                 }
@@ -456,13 +462,10 @@ struct TagPanel<MenuItems: View>: View {
         }
         .padding(.top, 20)
         .padding(.bottom, 8)
-        .background {
-            UnevenRoundedRectangle(topLeadingRadius: 28, bottomLeadingRadius: 0, bottomTrailingRadius: 0,
-                                   topTrailingRadius: 28, style: .continuous)
-                .fill(Tone.bg)
-                .shadow(color: .black.opacity(0.16), radius: 20, y: -6)
-                .ignoresSafeArea(edges: .bottom)
-        }
+        // 사진 위에 떠 있는 유리판 — 뒤의 사진이 비쳐야 유리로 보인다
+        .liquidGlassCard(cornerRadius: 28)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 6)
         .sensoryFeedback(.selection, trigger: people)
         .sensoryFeedback(.selection, trigger: shooter)
         .sensoryFeedback(.selection, trigger: event)

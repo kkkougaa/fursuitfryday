@@ -64,6 +64,19 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// 화면 위에 떠 있는 주 버튼 — 리퀴드 글래스에 강조색을 입힌다
+struct GlassPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 17, weight: .bold))
+            .foregroundStyle(Tone.onBlue)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .liquidGlassRect(cornerRadius: 18, tint: Tone.blue)
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
+}
+
 struct FillButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

@@ -151,6 +151,45 @@ final class MetaStore: ObservableObject {
 
     func camera(_ localId: String) -> String? { metas[localId]?.camera }
 
+    /// 로컬 ID → 원본 파일 이름. 사진사별 파일명 규칙과 웹 기록 가져오기가 쓴다.
+    @Published private(set) var names: [String: String] = [:]
+    private var naming = false
+    private var namesURL: URL { url.deletingLastPathComponent().appendingPathComponent("photo-names.json") }
+
+    /// 파일 이름은 사진을 열지 않고 알 수 있어서 전부 훑는다
+    func indexNames(_ localIds: [String]) {
+        if names.isEmpty, let data = try? Data(contentsOf: namesURL),
+           let saved = try? JSONDecoder().decode([String: String].self, from: data) {
+            names = saved
+        }
+        guard !naming else { return }
+        let todo = localIds.filter { names[$0] == nil }
+        guard !todo.isEmpty else { return }
+        naming = true
+        Task.detached(priority: .utility) { [weak self] in
+            var found: [String: String] = [:]
+            var start = 0
+            while start < todo.count {
+                let chunk = Array(todo[start..<min(start + 500, todo.count)])
+                start += 500
+                PHAsset.fetchAssets(withLocalIdentifiers: chunk, options: nil).enumerateObjects { asset, _, _ in
+                    if let name = PHAssetResource.assetResources(for: asset).first?.originalFilename {
+                        found[asset.localIdentifier] = name
+                    }
+                }
+            }
+            let result = found
+            await self?.mergeNames(result)
+        }
+    }
+
+    private func mergeNames(_ found: [String: String]) {
+        naming = false
+        guard !found.isEmpty else { return }
+        names.merge(found) { _, new in new }
+        if let data = try? JSONEncoder().encode(names) { try? data.write(to: namesURL, options: .atomic) }
+    }
+
     /// 아직 안 읽은 사진을 뒤에서 훑는다. iCloud 에만 있는 원본은 내려받지 않고 건너뛴다.
     func sweep(_ localIds: [String]) {
         guard !sweeping else { return }
@@ -246,7 +285,21 @@ enum Avatars {
     }
 
     /// X 프로필 사진을 unavatar.io 에서 받는다. 보내는 것은 X 아이디뿐이다.
-    static func fetch(x: String) async throws -> Data {
+    static func fetch(x: String, force: Bool = false) async throws -> Data {
+        // 한 번 받은 사진은 기기에 둔다 — 같은 아이디를 다시 물어 호출 한도를 쓰지 않게. 30일이 지나면 새로 받는다.
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("avatars")
+        let file = dir.appendingPathComponent(x.lowercased() + ".jpg")
+        if !force, let made = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
+           Date().timeIntervalSince(made) < 30 * 86400, let cached = try? Data(contentsOf: file) {
+            return cached
+        }
+        let fresh = try await download(x: x)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? fresh.write(to: file, options: .atomic)
+        return fresh
+    }
+
+    private static func download(x: String) async throws -> Data {
         var c = URLComponents(string: "https://unavatar.io/x/\(x)")!
         c.queryItems = [URLQueryItem(name: "fallback", value: "false")]
         if let key = UserDefaults.standard.string(forKey: "fff.unavatar.pk"), !key.isEmpty {

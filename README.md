@@ -6,7 +6,7 @@
 - **사진은 사진첩에서 읽기만 한다.** 행사 사진을 전부 모아 둔 **앨범 하나**를 고르면 그 안의 사진을 계속 따라간다.
   어느 행사 사진인지는 앱이 사진마다 기록한다 — 찍은 날짜·장소·카메라를 보고 제안하고, 사람이 확정한다.
 - **태그·사용 이력·일정은 앱의 기록 파일(`catalog.json`)에만** 있다. 사진 파일에는 아무것도 쓰지 않는다.
-- 기록 파일은 **드롭박스 앱 폴더**에 백업한다(사진은 올리지 않는다).
+- 기록 파일은 **아이폰 백업에 포함되고, 설정에서 파일로 내보내고 가져올 수 있다.
 - 아이폰 전용, iOS 17 이상.
 
 ## 빌드
@@ -18,13 +18,11 @@
 
 필요한 Secrets 는 워크플로 파일 머리말에 적혀 있다. 번들 ID 는 `com.kouga.fursuitfryday`.
 
-## 드롭박스 연결
+## 웹 버전 기록 가져오기
 
-1. 드롭박스 앱 콘솔에서 **App folder** 방식으로 앱을 만든다. 권한은 `files.content.read`, `files.content.write`.
-2. 앱 설정의 OAuth 2 에서 **Allow public clients (Implicit Grant & PKCE)** 를 켠다.
-3. App key 를 `project.yml` 의 `DropboxAppKey` 에 넣는다(공개 클라이언트라 비밀 값이 아니다).
-4. 앱에서 "연결"을 누르면 승인 화면이 열린다. 거기 뜨는 코드를 앱에 붙여넣는다.
-   (드롭박스가 리다이렉트 주소를 https 만 받아서 코드 붙여넣기 방식을 쓴다)
+설정 → 기록 가져오기에서 웹 버전의 기록 파일(구글 드라이브의 `fursuitfryday.catalog.json`)을 고른다.
+행사·사진사·퍼슈트·태그·일정·설정은 바로 들어오고, 사진 기록은 **파일 이름**(안 되면 촬영 시각+해상도)으로
+사진첩의 사진과 짝을 맞춘다. 아직 앨범에 없는 사진의 기록은 기기에 두었다가 사진이 들어오면 붙인다.
 
 ## 구조
 
@@ -34,7 +32,8 @@ App/Theme.swift              색·버튼·세그먼트·사진 칸
 App/Model/Catalog.swift      기록 스키마, 합치기, 저장소
 App/Model/Events.swift       행사(일정)·약속·체크리스트, 날짜 계산
 App/Model/PhotoLibrary.swift 고른 앨범의 사진 읽기, 기록 키(클라우드 ID)
-App/Model/Dropbox.swift      PKCE 로그인, catalog.json 받기·올리기
+App/Model/WebImport.swift    웹 버전 기록 파일 가져오기, 파일 이름으로 사진 짝짓기
+App/Glass.swift              iOS 26 리퀴드 글래스 (아니면 반투명 재질)
 App/Model/Meta.swift         테마 색 계산, 촬영 정보(EXIF), 프로필 사진, 장소 이름
 App/Model/SuitMatcher.swift  퍼슈트 추천 (피사체 분리 + 이미지 특징값)
 App/Views/                   모아보기 · 사진 · 사진 상세 · 일정 · 프로필 · 설정

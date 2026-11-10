@@ -4,7 +4,6 @@ import SwiftUI
 struct FursuitFrydayApp: App {
     @StateObject private var store: CatalogStore
     @StateObject private var library: PhotoLibrary
-    @StateObject private var dropbox: DropboxSync
     @StateObject private var meta = MetaStore.shared
     @Environment(\.scenePhase) private var phase
 
@@ -12,7 +11,6 @@ struct FursuitFrydayApp: App {
         let s = CatalogStore()
         _store = StateObject(wrappedValue: s)
         _library = StateObject(wrappedValue: PhotoLibrary(store: s))
-        _dropbox = StateObject(wrappedValue: DropboxSync(store: s))
     }
 
     var body: some Scene {
@@ -20,7 +18,6 @@ struct FursuitFrydayApp: App {
             RootView()
                 .environmentObject(store)
                 .environmentObject(library)
-                .environmentObject(dropbox)
                 .environmentObject(meta)
                 .tint(Tone.blue)
                 .modifier(ToastHost())
@@ -28,7 +25,6 @@ struct FursuitFrydayApp: App {
                     if now == .active {
                         // 사진 앱에서 앨범을 고치고 돌아온 경우를 바로 반영한다
                         library.reload()
-                        Task { await dropbox.sync() }
                     } else if now == .background {
                         store.saveNow()
                     }
@@ -60,7 +56,6 @@ struct MainTabs: View {
         TabView {
             NavigationStack { HomeView().routes() }
                 .tabItem { Label(home, systemImage: "square.grid.2x2") }
-                .badge(Suggestion.build(library: library, store: store, meta: meta).count)
             NavigationStack { PhotosView(filter: PhotoFilter(), isTab: true).routes() }
                 .tabItem { Label("사진", systemImage: "photo") }
             NavigationStack { ScheduleView().routes() }

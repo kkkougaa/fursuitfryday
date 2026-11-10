@@ -55,13 +55,17 @@ actor SuitMatcher {
     private var saved = Saved()
     private var limits: [String: Float] = [:]
     private var pooledLimit: Float?
-    private var queryCache: [String: [[Float]]] = [:] // 로컬 ID → 조각별 특징값
+    /// 로컬 ID → 조각별 특징값. 한 번 뽑은 것은 기기에 남겨 다시 계산하지 않는다(사진 한 장에 0.3초쯤 걸린다).
+    private var printCache: [String: [Data]] = [:]
+    private var printsDirty = false
     private let url: URL
+    private let printsURL: URL
     private var loaded = false
 
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         url = dir.appendingPathComponent("suit-exemplars.plist")
+        printsURL = dir.appendingPathComponent("suit-prints.plist")
     }
 
     private func load() {
@@ -70,7 +74,43 @@ actor SuitMatcher {
         if let data = try? Data(contentsOf: url), let old = try? PropertyListDecoder().decode(Saved.self, from: data) {
             saved = old
         }
+        if let data = try? Data(contentsOf: printsURL), let old = try? PropertyListDecoder().decode([String: [Data]].self, from: data) {
+            printCache = old
+        }
         calibrate()
+    }
+
+    private func savePrints() {
+        guard printsDirty else { return }
+        printsDirty = false
+        let e = PropertyListEncoder()
+        e.outputFormat = .binary
+        if let data = try? e.encode(printCache) { try? data.write(to: printsURL, options: .atomic) }
+    }
+
+    /// 앨범 전체를 조금씩 훑어, 퍼슈트별로 "이 퍼슈트 같아 보이는 사진"을 모은다.
+    /// 아직 특징값을 안 뽑은 사진은 한 번에 budget 장까지만 새로 계산한다 — 나머지는 다음에 이어서.
+    /// 돌려주는 것: 퍼슈트 ID → 로컬 ID 들, 그리고 아직 안 훑은 장수.
+    func groups(_ items: [(key: String, localId: String, people: [String])], budget: Int) -> (found: [String: [String]], left: Int) {
+        load()
+        guard !saved.exemplars.isEmpty else { return ([:], 0) }
+        var out: [String: [String]] = [:]
+        var spent = 0
+        var left = 0
+        for item in items {
+            if printCache[item.localId] == nil {
+                if spent >= budget {
+                    left += 1
+                    continue
+                }
+                spent += 1
+            }
+            for suit in suggest(localId: item.localId, key: item.key, excluding: item.people) {
+                out[suit, default: []].append(item.localId)
+            }
+        }
+        savePrints()
+        return (out, left)
     }
 
     private func save() {
@@ -104,6 +144,7 @@ actor SuitMatcher {
             calibrate()
             save()
         }
+        savePrints()
     }
 
     /// 같은 퍼슈트끼리 얼마나 벌어지는지에서 퍼슈트별 한계를 잡는다
@@ -196,7 +237,7 @@ actor SuitMatcher {
 
     /// 사진 속 피사체 조각(큰 순서로 최대 3개)의 특징값. 조각을 못 떼면 사진 전체로 한다.
     private func prints(_ localId: String) -> [[Float]] {
-        if let cached = queryCache[localId] { return cached }
+        if let cached = printCache[localId] { return cached.map(Self.unpack) }
         guard let image = Self.image(localId) else { return [] }
         var out: [[Float]] = []
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
@@ -214,8 +255,8 @@ actor SuitMatcher {
             }
         }
         if out.isEmpty, let v = Self.featurePrint(handler) { out.append(v) }
-        if queryCache.count > 200 { queryCache.removeAll() }
-        queryCache[localId] = out
+        printCache[localId] = out.map(Self.pack)
+        printsDirty = true
         return out
     }
 

@@ -124,7 +124,7 @@ struct SheetBody<Content: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Text(title).font(.system(size: 22, weight: .bold)).foregroundStyle(Tone.g900).padding(.top, 10)
+                Text(title).font(.system(size: 22, weight: .bold)).foregroundStyle(Tone.g900).padding(.top, 32)
                 if let lead { Text(lead).font(.system(size: 14)).foregroundStyle(Tone.g600) }
                 content()
             }
@@ -166,36 +166,56 @@ struct Field: View {
 }
 
 /// 날짜(없을 수도 있는) 고르기. 값은 "YYYY-MM-DD".
+/// 날짜를 우리 글씨로 보여주고, 누르면 달력이 올라온다.
 struct DayField: View {
     let label: String
     @Binding var day: String?
-    var range: ClosedRange<Date>?
+    @State private var picking = false
+
+    private static let pretty: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ko_KR")
+        f.dateFormat = "yyyy.MM.dd (E)"
+        return f
+    }()
 
     var body: some View {
-        HStack {
+        HStack(spacing: 4) {
             Text(label).font(.system(size: 15)).foregroundStyle(Tone.g700)
             Spacer()
+            Button {
+                if day == nil { day = Day.today }
+                picking = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar").font(.system(size: 14, weight: .semibold))
+                    Text(day.map { Self.pretty.string(from: Day.local($0)) } ?? "정하기")
+                        .font(.system(size: 15, weight: .bold).monospacedDigit())
+                }
+                .foregroundStyle(day == nil ? Tone.blueText : Tone.g900)
+                .padding(.horizontal, 14)
+                .frame(height: 40)
+                .background(day == nil ? Tone.blueFill : Tone.fill, in: Capsule())
+            }
+            .buttonStyle(.plain)
             if day != nil {
-                let binding = Binding<Date>(get: { Day.local(day ?? Day.today) }, set: { day = Day.string($0) })
-                if let range {
-                    DatePicker("", selection: binding, in: range, displayedComponents: .date).labelsHidden()
-                } else {
-                    DatePicker("", selection: binding, displayedComponents: .date).labelsHidden()
-                }
-                Button {
-                    day = nil
-                } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(Tone.g400)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(label) 지우기")
-            } else {
-                Button("정하기") { day = Day.today }
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(Tone.blueText)
+                IconButton(symbol: "xmark", label: "\(label) 지우기") { day = nil }
             }
         }
         .frame(minHeight: 48)
+        .sheet(isPresented: $picking) {
+            VStack(spacing: 8) {
+                DatePicker(label, selection: Binding(get: { Day.local(day ?? Day.today) }, set: { day = Day.string($0) }),
+                           displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .environment(\.locale, Locale(identifier: "ko_KR"))
+                Button("완료") { picking = false }.buttonStyle(PrimaryButtonStyle())
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .presentationDetents([.height(480)])
+            .presentationDragIndicator(.visible)
+        }
     }
 }
 
@@ -352,10 +372,10 @@ struct ToastHost: ViewModifier {
             if let text = toaster.text {
                 Text(text)
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Tone.bg)
+                    .foregroundStyle(Tone.g900)
                     .padding(.horizontal, 18)
                     .frame(minHeight: 44)
-                    .background(Tone.g900.opacity(0.94), in: Capsule())
+                    .liquidGlass()
                     .padding(.bottom, 96)
                     .padding(.horizontal, 24)
                     .transition(.move(edge: .bottom).combined(with: .opacity))

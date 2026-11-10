@@ -172,6 +172,7 @@ struct ScheduleView: View {
         }
         .background(Tone.bg)
         .navigationTitle("일정")
+        .toolbarTitleDisplayMode(.inlineLarge)
         .sheet(isPresented: $adding) { EventSheet(editing: nil) }
     }
 
