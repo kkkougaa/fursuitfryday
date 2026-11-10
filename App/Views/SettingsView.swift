@@ -209,10 +209,10 @@ struct SettingsView: View {
                     busy = "사진첩에서 찾는 중… \(seen.formatted()) / \(total.formatted())"
                     fraction = total > 0 ? Double(seen) / Double(total) : nil
                 }
-                let skipped = result.skipped > 0 ? " 촬영 시각이나 해상도가 없는 웹 기록 \(result.skipped)장은 확인할 수 없어 찾지 않았어요." : ""
+                let skipped = result.skipped > 0 ? " 해상도도 촬영 시각도 없는 웹 기록 \(result.skipped)장은 찾지 않았어요." : ""
                 report = (result.added > 0
-                    ? "사진첩 \(result.scanned.formatted())장을 훑어 \(result.added)장을 \"\(library.sourceTitle)\" 앨범에 넣었어요. 이름·해상도·촬영 시각이 모두 맞는 사진만 넣었습니다. 기록은 잠시 뒤 저절로 붙습니다."
-                    : "사진첩 \(result.scanned.formatted())장을 훑었지만 웹 기록 \(waiting)장과 이름·해상도·촬영 시각이 모두 맞는 사진을 찾지 못했어요.") + skipped
+                    ? "사진첩 \(result.scanned.formatted())장을 훑어 \(result.added)장을 \"\(library.sourceTitle)\" 앨범에 넣었어요. 이름·해상도·촬영 시각 가운데 둘이 맞는 사진만 넣었습니다. 기록은 잠시 뒤 저절로 붙습니다."
+                    : "사진첩 \(result.scanned.formatted())장을 훑었지만 웹 기록 \(waiting)장과 이름·해상도·촬영 시각 가운데 둘이 맞는 사진을 찾지 못했어요.") + skipped
             } catch {
                 report = (error as? PhotoLibrary.AlbumError)?.text ?? "앨범에 넣지 못했어요: \(error.localizedDescription)"
             }

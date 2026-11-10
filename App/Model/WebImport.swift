@@ -257,25 +257,37 @@ final class WebImport: ObservableObject {
             done += 1
         }
 
-        // 1단계 — 파일을 읽지 않고 확실한 것만
+        // 1단계 — 파일을 읽지 않고 가린다.
+        // 이름·해상도·촬영 시각 셋 가운데 **둘이 맞고, 그런 사진이 앨범에 하나뿐이면** 같은 사진으로 본다.
+        // 셋 다 맞기를 요구하면, 웹 기록의 촬영 시각이 잘못 적힌 사진(드라이브가 촬영 시각을 못 읽어
+        // 올린 날짜가 대신 적힌 사진들)이 전부 떨어진다.
         for p in pending {
             let probe = p.probe
             let named = (byName[probe.stem] ?? []).filter { !taken.contains($0.id) }
+            let nameTime = named.filter { s in
+                guard let a = probe.shot, let b = s.shot else { return false }
+                return WebMatch.sameShot(a, b, stamp)
+            }
+            let nameSize = named.filter { $0.size == probe.size }
+            var timeSize: [Seen] = []
             if let shot = probe.shot, let size = probe.size {
-                let fitting = named.filter { WebMatch.fits(probe, stem: probe.stem, shot: $0.shot, size: $0.size, stamp: stamp) }
-                let siblings = byShot["\(shot)|\(size)"] ?? []
-                if fitting.count == 1, siblings.count <= 1 {
-                    attach(p, fitting[0].asset)
-                } else {
-                    hard.append(p)
-                }
-            } else if let size = probe.size {
-                // 촬영 시각이 없는 기록 — 이름과 해상도가 맞는 사진이 딱 하나일 때만
-                let same = named.filter { $0.size == size }
-                if same.count == 1 { attach(p, same[0].asset) } else { left.append(p) }
-            } else if named.count == 1 {
-                // 촬영 정보가 아예 없는 기록 — 앨범 안에 그 이름이 하나뿐일 때만
+                timeSize = (byShot["\(shot)|\(size)"] ?? []).filter { !taken.contains($0.id) }
+            }
+            if nameTime.count == 1 {
+                // 이름 + 촬영 시각
+                attach(p, nameTime[0].asset)
+            } else if nameSize.count == 1 {
+                // 이름 + 해상도
+                attach(p, nameSize[0].asset)
+            } else if probe.size == nil, named.count == 1 {
+                // 해상도가 없는 기록 — 앨범 안에 그 이름이 하나뿐일 때만
                 attach(p, named[0].asset)
+            } else if timeSize.count == 1 {
+                // 촬영 시각 + 해상도 (이름이 바뀐 사진)
+                attach(p, timeSize[0].asset)
+            } else if probe.shot != nil, probe.size != nil {
+                // 후보가 여럿이다(연사, 이름이 겹침) — 지문으로 가린다
+                hard.append(p)
             } else {
                 left.append(p)
             }
@@ -463,7 +475,8 @@ private final class HashJob: @unchecked Sendable {
 
 /// "같은 사진인가"의 규칙. 사진첩에서 찾을 때와 앨범에서 기록을 붙일 때 똑같이 쓴다.
 ///
-/// 가장 확실한 건 파일 지문(md5)이다 — 같으면 완전히 같은 파일이다. 다만 저장하면서 다시 압축된 사진은
+/// 이름·해상도·촬영 시각 가운데 **둘이 맞고 그런 사진이 하나뿐이면** 같은 사진으로 본다.
+/// 후보가 여럿이라 가려지지 않을 때 쓰는, 가장 확실한 건 파일 지문(md5)이다 — 같으면 완전히 같은 파일이다. 다만 저장하면서 다시 압축된 사진은
 /// 눈으로는 같아도 지문이 다르다. 그런 사진을 위해 두 번째 규칙을 둔다:
 /// 파일 이름만으로는 같은 사진이라고 할 수 없으니(IMG_1234, DSC_0001 은 얼마든지 겹친다)
 /// **이름 + 해상도 + 촬영 시각**이 다 맞아야 같은 사진으로 본다.

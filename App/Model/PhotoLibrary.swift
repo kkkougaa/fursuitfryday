@@ -243,31 +243,34 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     /// 사진첩 전체에서 웹 기록과 같은 사진을 찾아 고른 앨범에 넣는다. 이미 앨범에 있는 사진은 건너뛴다.
     ///
     /// 이름만 같다고 같은 사진이 아니다 — IMG_1234 같은 이름은 사진첩에 얼마든지 겹친다.
-    /// 그래서 WebMatch 의 규칙(이름 + 해상도 + 촬영 시각)이 다 맞거나, 파일 지문(md5)이 같아야 넣는다.
-    /// 촬영 시각이나 해상도가 없는 웹 기록은 확인할 길이 없어서 여기서는 찾지 않는다(skipped).
-    ///
-    /// 해상도와 촬영 시각(분·초)으로 먼저 걸러 낸 사진에만 파일 이름을 물어보므로 빠르다.
+    /// 그래서 이름·해상도·촬영 시각 가운데 둘이 맞아야 넣는다:
+    /// - 이름 + 촬영 시각
+    /// - 이름 + 해상도 — 사진첩 전체에 그런 사진이 하나뿐일 때만
+    /// - 촬영 시각 + 해상도 — 파일 지문(md5)이 같거나, 그런 사진이 웹 기록 수를 넘지 않을 때만
+    /// 해상도도 촬영 시각도 없는 웹 기록은 여기서 찾지 않는다(skipped).
     func addToAlbum(probes: [WebProbe], progress: @escaping @MainActor (Int, Int) -> Void) async throws
         -> (added: Int, scanned: Int, skipped: Int) {
         guard let sourceId, PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject != nil
         else { throw AlbumError.notAlbum }
         let inAlbum = Set(all.map(\.localIdentifier))
         return try await Task.detached(priority: .userInitiated) {
-            let usable = probes.filter { $0.shot != nil && $0.size != nil }
+            // 이름·해상도·촬영 시각 가운데 둘이 맞으면 후보다. 해상도도 촬영 시각도 없는 기록은 찾을 수 없다.
+            let usable = probes.filter { $0.size != nil || $0.shot != nil }
             var byStem: [String: [WebProbe]] = [:]
-            var keyCount: [String: Int] = [:]
+            var timeCount: [String: Int] = [:]
             var sizes = Set<String>()
             var marks = Set<String>()
             for p in usable {
-                guard let shot = p.shot, let size = p.size else { continue }
                 byStem[p.stem, default: []].append(p)
-                keyCount["\(shot)|\(size)", default: 0] += 1
-                sizes.insert(size)
-                marks.insert(String(shot.suffix(5)))
+                if let size = p.size { sizes.insert(size) }
+                if let shot = p.shot {
+                    marks.insert(String(shot.suffix(5)))
+                    if let size = p.size { timeCount["\(shot)|\(size)", default: 0] += 1 }
+                }
             }
             let names = byStem
             let hashes = Set(usable.compactMap(\.md5))
-            let counts = keyCount
+            let times = timeCount
             let knownSizes = sizes
             let knownMarks = marks
 
@@ -294,30 +297,41 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                     }
                     guard !inAlbum.contains(asset.localIdentifier), let made = asset.creationDate else { continue }
                     let size = WebMatch.size(asset.pixelWidth, asset.pixelHeight)
-                    guard knownSizes.contains(size) else { continue }
                     let shot = stamp.string(from: made)
-                    guard knownMarks.contains(String(shot.suffix(5))) else { continue }
+                    // 해상도도 촬영 시각(분·초)도 웹 기록에 없는 사진은 볼 것도 없다
+                    guard knownSizes.contains(size) || knownMarks.contains(String(shot.suffix(5))) else { continue }
                     // 여기까지 온 사진만 파일 이름을 물어본다
                     let stem = PHAssetResource.assetResources(for: asset).first.map { WebMatch.stem($0.originalFilename) }
-                    if let stem, let same = names[stem], same.contains(where: { WebMatch.fits($0, stem: stem, shot: shot, size: size, stamp: stamp) }) {
+                    let same = stem.flatMap { names[$0] } ?? []
+                    if same.contains(where: { p in p.shot.map { WebMatch.sameShot($0, shot, stamp) } ?? false }) {
+                        // 이름 + 촬영 시각
                         state.collect([asset])
-                    } else if counts["\(shot)|\(size)"] != nil {
-                        // 이름은 다르지만 촬영 시각·해상도가 똑같다 — 저장하면서 이름이 바뀐 사진일 수 있다.
-                        // 파일 지문으로 확인한다. 지문이 웹 기록에 있으면 같은 파일, 없으면 다른 사진(연사의 옆 컷 등)이다.
+                    } else if let stem, same.contains(where: { $0.size == size }) {
+                        // 이름 + 해상도 — 사진첩 전체에 그런 사진이 하나뿐일 때만 넣는다(아래에서 센다)
+                        state.maybe("n:\(stem)|\(size)", asset)
+                    } else if times["\(shot)|\(size)"] != nil {
+                        // 촬영 시각 + 해상도 (이름이 바뀐 사진). 연사의 옆 컷일 수 있으니 파일 지문으로 확인한다.
                         if !hashes.isEmpty, let hash = FileHasher.shared.md5(asset) {
                             if hashes.contains(hash) { state.collect([asset]) }
                         } else {
-                            // 지문을 구할 수 없을 때만 예전 방식(장수 비교)으로 넘긴다
-                            state.maybe("\(shot)|\(size)", asset)
+                            // 지문을 구할 수 없을 때만 장수 비교로 넘긴다
+                            state.maybe("t:\(shot)|\(size)", asset)
                         }
                     }
                 }
             }
 
             FileHasher.shared.save()
-            // 이름이 바뀐 후보는, 같은 시각·해상도의 사진이 웹 기록 수보다 많으면(연사 등) 어느 것인지 알 수 없으니 넣지 않는다
             var found = state.hits
-            for (key, assets) in state.loose where assets.count <= (counts[key] ?? 0) { found += assets }
+            for (key, assets) in state.loose {
+                if key.hasPrefix("n:") {
+                    // 이름과 해상도가 같은 사진이 사진첩에 여럿이면(IMG_1234 처럼 흔한 이름) 어느 것인지 알 수 없다
+                    if assets.count == 1 { found += assets }
+                } else if assets.count <= (times[String(key.dropFirst(2))] ?? 0) {
+                    // 같은 시각·해상도의 사진이 웹 기록 수보다 많으면(연사 등) 넣지 않는다
+                    found += assets
+                }
+            }
             let chosen = found
             if !chosen.isEmpty {
                 try await PHPhotoLibrary.shared().performChanges {
