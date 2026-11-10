@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-// 설정과 그 안의 화면들 — 테마, 홈 이름, 사람 관리, 카테고리·태그, 복사 템플릿, 기록 내보내기·가져오기
+// 설정과 그 안의 화면들 — 테마, 홈 이름, 사람 관리, 카테고리·태그, 복사 템플릿, 기록 백업
 
 /// 설정 한 줄 — 색 네모 안의 아이콘, 제목, 오른쪽 값
 private struct SettingLabel: View {
@@ -29,25 +29,17 @@ private struct SettingLabel: View {
 struct SettingsView: View {
     @EnvironmentObject private var store: CatalogStore
     @EnvironmentObject private var library: PhotoLibrary
-    @EnvironmentObject private var meta: MetaStore
-    @ObservedObject private var web = WebImport.shared
     @State private var theming = false
     @State private var naming = false
     @State private var choosingAlbum = false
     @State private var keying = false
     @State private var importing = false
-    @State private var dropping = false
     /// 파일 고르기는 한 화면에 하나만 붙일 수 있어서, 무엇을 고르는지를 따로 둔다
     @State private var pickingPhotos = false
     @State private var busy: String?
-    /// 0~1. nil 이면 얼마나 걸릴지 모르는 작업.
     @State private var fraction: Double?
     @State private var report: String?
-    @State private var strays: [PHAsset] = []
-    @State private var cleaning = false
-    @State private var wiping = false
-    @State private var sharing = false
-    @State private var viewing = false
+    @State private var incoming: Catalog?
 
     var body: some View {
         let o = store.catalog.opts
@@ -69,7 +61,6 @@ struct SettingsView: View {
                     pickingPhotos = true
                     importing = true
                 }
-                button("rectangle.stack.badge.minus", "amber", "기록 없는 사진 앨범에서 빼기", nil) { findStrays() }
             }
 
             Section("사람과 퍼슈트") {
@@ -90,19 +81,15 @@ struct SettingsView: View {
             }
 
             Section {
-                button("square.and.arrow.up", "blue", "기록 내보내기", nil) { export() }
+                button("square.and.arrow.up", "blue", "기록 내보내기", "사진 \(store.catalog.photos.count)장") { export() }
                 button("square.and.arrow.down", "green", "기록 가져오기", nil) {
                     pickingPhotos = false
                     importing = true
                 }
-                if !web.pending.isEmpty {
-                    button("clock.arrow.circlepath", "amber", "웹 기록 대기", "\(web.pending.count)장") { dropping = true }
-                }
-                button("trash", "red", "사진 기록 초기화", "\(store.catalog.photos.count)장") { wiping = true }
             } header: {
-                Text("기록")
+                Text("백업")
             } footer: {
-                Text("기록은 이 기기에만 있고 아이폰 백업에 포함됩니다. 가져오기는 이 앱에서 내보낸 파일과 웹 버전의 기록 파일(fursuitfryday.catalog.json)을 모두 받습니다.")
+                Text("기록은 이 기기에만 있고 아이폰 백업에 포함됩니다. 앱을 새로 깔았을 때는 내보내 둔 파일을 가져오면 됩니다.")
             }
 
             Section {
@@ -139,23 +126,6 @@ struct SettingsView: View {
         }
         .animation(.snappy(duration: 0.25), value: busy == nil)
         .allowsHitTesting(busy == nil)
-        .confirm("기록 없는 사진 \(strays.count)장을 앨범에서 뺄까요?",
-                 message: "\"\(library.sourceTitle)\" 앨범에서, 이 앱에 아무 기록이 없고 대기 중인 웹 기록과도 맞지 않는 사진입니다. 앨범에서만 빠지고 사진은 사진첩에 그대로 남습니다. 아직 분류하지 않은 새 사진도 여기에 포함됩니다.",
-                 action: "앨범에서 빼기", isPresented: $cleaning) {
-            removeStrays()
-        }
-        .confirm("사진 기록 \(store.catalog.photos.count)장을 모두 지울까요?",
-                 message: "사진마다 붙은 행사·사진사·퍼슈트·태그·사용 이력이 사라집니다. 행사·사진사·퍼슈트 목록과 일정은 남습니다. 웹 기록을 잘못 붙인 뒤 처음부터 다시 가져올 때 씁니다. 되돌릴 수 없으니 먼저 기록 내보내기를 해 두세요.",
-                 action: "사진 기록 지우기", isPresented: $wiping) {
-            store.edit { $0.photos = [:] }
-            report = "사진 기록을 지웠어요. 기록 가져오기로 웹 기록 파일을 다시 고르면 처음부터 다시 맞춥니다."
-        }
-        .alert("드라이브 폴더 공유를 켜 주세요", isPresented: $sharing) {
-            Button("공유를 켰어요") { driveCheck() }
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text("구글 로그인 없이 사진을 받기 때문에, 웹 버전에 연결했던 드라이브 폴더가 \"링크가 있는 모든 사용자\"로 공유돼 있어야 합니다. 남은 기록의 사진만 줄인 그림으로 받아 사진첩 전체와 비교하고, 같은 그림일 때만 앨범에 넣고 기록을 붙입니다. 끝나면 공유를 다시 꺼 주세요.")
-        }
         .alert("끝났어요", isPresented: Binding(get: { report != nil }, set: { if !$0 { report = nil } })) {
             Button("확인") { report = nil }
         } message: {
@@ -166,7 +136,6 @@ struct SettingsView: View {
         .sheet(isPresented: $theming) { ThemeSheet().presentationDetents([.medium, .large]) }
         .sheet(isPresented: $naming) { HomeNameSheet().presentationDetents([.medium]) }
         .sheet(isPresented: $choosingAlbum) { SetupView(firstRun: false) }
-        .sheet(isPresented: $viewing) { PendingSheet() }
         // 키는 이 기기에만 둔다 — 기록 파일에는 넣지 않는다
         .namePrompt("unavatar 키", placeholder: "퍼블리셔블 키", action: "저장", isPresented: $keying) { key in
             UserDefaults.standard.set(key, forKey: "fff.unavatar.pk")
@@ -179,14 +148,14 @@ struct SettingsView: View {
             }
             if pickingPhotos { importPhotos(urls) } else { load(urls[0]) }
         }
-        .confirmationDialog("짝을 못 찾은 웹 기록 \(web.pending.count)장", isPresented: $dropping, titleVisibility: .visible) {
-            Button("사진첩에서 찾아 앨범에 넣기") { findInLibrary() }
-            Button("드라이브 사진과 비교해서 찾기") { sharing = true }
-            Button("남은 사진 보고 골라 받기") { viewing = true }
-            Button("대기 기록 버리기", role: .destructive) { web.discardPending() }
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text("웹 버전에서 가져온 사진 기록 가운데, 같은 파일 이름의 사진이 아직 앨범에 없는 것들입니다. 사진첩 어딘가에 그 사진이 있으면 이름으로 찾아 앨범에 넣을 수 있습니다. 앨범에 들어오면 기록이 저절로 붙습니다.")
+        .confirm("내보내 둔 기록을 가져올까요?",
+                 message: "사진 기록 \(incoming?.photos.count ?? 0)장 · 행사 \(incoming?.events.count ?? 0)개가 들어 있습니다. 지금 기록과 합칩니다 — 같은 항목은 더 나중에 고친 쪽이 남습니다.",
+                 action: "가져오기", isPresented: Binding(get: { incoming != nil }, set: { if !$0 { incoming = nil } })) {
+            if let other = incoming {
+                store.importNative(other)
+                report = "기록을 가져왔어요. 사진 기록 \(other.photos.count)장."
+            }
+            incoming = nil
         }
     }
 
@@ -198,82 +167,7 @@ struct SettingsView: View {
         NavigationLink(value: route) { SettingLabel(icon: icon, color: color, title: title, value: value) }
     }
 
-    /// 사진첩 전체에서 웹 기록과 이름이 같은 사진을 찾아 앨범에 넣는다
-    private func findInLibrary() {
-        let waiting = web.pending.count
-        busy = "사진첩에서 찾는 중…"
-        fraction = 0
-        Task {
-            do {
-                let result = try await library.addToAlbum(probes: web.probes) { seen, total in
-                    busy = "사진첩에서 찾는 중… \(seen.formatted()) / \(total.formatted())"
-                    fraction = total > 0 ? Double(seen) / Double(total) : nil
-                }
-                let skipped = result.skipped > 0 ? " 해상도도 촬영 시각도 없는 웹 기록 \(result.skipped)장은 찾지 않았어요." : ""
-                report = (result.added > 0
-                    ? "사진첩 \(result.scanned.formatted())장을 훑어 \(result.added)장을 \"\(library.sourceTitle)\" 앨범에 넣었어요. 이름·해상도·촬영 시각 가운데 둘이 맞는 사진만 넣었습니다. 기록은 잠시 뒤 저절로 붙습니다."
-                    : "사진첩 \(result.scanned.formatted())장을 훑었지만 웹 기록 \(waiting)장과 이름·해상도·촬영 시각 가운데 둘이 맞는 사진을 찾지 못했어요.") + skipped
-            } catch {
-                report = (error as? PhotoLibrary.AlbumError)?.text ?? "앨범에 넣지 못했어요: \(error.localizedDescription)"
-            }
-            busy = nil
-            fraction = nil
-        }
-    }
-
-    /// 남은 웹 기록의 사진을 드라이브에서 받아 사진첩 전체와 그림으로 비교한다 (옮겨 올 때 한 번 쓰는 도구)
-    private func driveCheck() {
-        busy = "준비 중…"
-        Task {
-            do {
-                let out = try await DriveCheck.run(web: web, library: library, store: store, meta: meta) { text, part in
-                    busy = text
-                    fraction = part
-                }
-                var lines = ["같은 사진을 찾아 기록을 붙임 \(out.linked)장 (그중 앨범 안에서 찾음 \(out.inAlbum)장)"]
-                if out.unsure > 0 { lines.append("닮은 사진이 여럿이라 가릴 수 없어 안 붙임 \(out.unsure)장") }
-                if out.missing > 0 { lines.append("같은 그림을 사진첩에서 찾지 못함 \(out.missing)장") }
-                if out.failed > 0 { lines.append("드라이브에서 받지 못함 \(out.failed)장") }
-                lines.append("아직 대기 중 \(web.pending.count)장")
-                report = lines.joined(separator: "\n")
-            } catch {
-                report = (error as? DriveCheck.Failure)?.text ?? (error as? PhotoLibrary.AlbumError)?.text ?? "비교하지 못했어요: \(error.localizedDescription)"
-            }
-            busy = nil
-            fraction = nil
-        }
-    }
-
-    /// 앨범 안에서, 기록도 없고 대기 중인 웹 기록과도 맞지 않는 사진을 센다
-    private func findStrays() {
-        strays = library.all.filter { a in
-            let r = store.record(library.key(for: a))
-            let empty = r.event == nil && r.shooter == nil && r.people.isEmpty && r.tags.isEmpty && r.usages.isEmpty && r.plannedAt == nil
-            return empty && web.fitsNothing(a, name: meta.names[a.localIdentifier])
-        }
-        if strays.isEmpty {
-            report = "앨범에서 뺄 사진이 없어요. 모든 사진에 기록이 있거나 대기 중인 웹 기록과 맞습니다."
-        } else {
-            cleaning = true
-        }
-    }
-
-    private func removeStrays() {
-        let targets = strays
-        busy = "앨범에서 빼는 중…"
-        Task {
-            do {
-                let n = try await library.removeFromAlbum(targets)
-                report = "\(n)장을 앨범에서 뺐어요. 사진은 사진첩에 그대로 있습니다."
-            } catch {
-                report = (error as? PhotoLibrary.AlbumError)?.text ?? "앨범에서 빼지 못했어요: \(error.localizedDescription)"
-            }
-            strays = []
-            busy = nil
-        }
-    }
-
-    /// 파일에서 고른 사진을 사진첩에 저장하고 앨범에 넣는다
+    /// 파일 앱에서 고른 사진을 사진첩에 저장하고 앨범에 넣는다
     private func importPhotos(_ urls: [URL]) {
         busy = "사진 가져오는 중… 0 / \(urls.count)"
         fraction = 0
@@ -308,7 +202,7 @@ struct SettingsView: View {
         }
     }
 
-    /// 이 앱의 기록 파일이면 합치고, 웹 버전의 기록 파일이면 옮겨 온다
+    /// 이 앱에서 내보낸 기록 파일을 읽어, 합치기 전에 한 번 묻는다
     private func load(_ url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -316,24 +210,10 @@ struct SettingsView: View {
             toast("파일을 읽지 못했어요")
             return
         }
-        if WebImport.looksLikeWeb(data) {
-            do {
-                let summary = try web.run(data, store: store)
-                let withHash = web.pending.filter { $0.md5 != nil }.count
-                busy = "웹 기록을 사진과 맞추는 중…"
-                Task {
-                    let linked = await web.match(library: library, store: store, meta: meta)
-                    busy = nil
-                    report = "웹 기록을 가져왔어요.\n\(summary)\n파일 지문이 있는 기록 \(withHash)장 · 앨범 사진에 연결 \(linked)장 · 대기 \(web.pending.count)장"
-                }
-            } catch {
-                toast("웹 기록 파일을 읽지 못했어요")
-            }
-        } else if let other = try? Catalog.decode(data) {
-            store.importNative(other)
-            toast("기록을 합쳤어요 · 사진 \(other.photos.count)장")
+        if let other = try? Catalog.decode(data) {
+            incoming = other
         } else {
-            toast("기록 파일이 아니에요")
+            report = "이 앱에서 내보낸 기록 파일이 아니에요."
         }
     }
 }

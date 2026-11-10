@@ -151,7 +151,7 @@ final class MetaStore: ObservableObject {
 
     func camera(_ localId: String) -> String? { metas[localId]?.camera }
 
-    /// 로컬 ID → 원본 파일 이름. 사진사별 파일명 규칙과 웹 기록 가져오기가 쓴다.
+    /// 로컬 ID → 원본 파일 이름. 사진사별 파일명 규칙이 쓴다.
     @Published private(set) var names: [String: String] = [:]
     private var naming = false
     private var namesURL: URL { url.deletingLastPathComponent().appendingPathComponent("photo-names.json") }

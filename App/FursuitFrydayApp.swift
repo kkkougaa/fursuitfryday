@@ -11,6 +11,9 @@ struct FursuitFrydayApp: App {
         let s = CatalogStore()
         _store = StateObject(wrappedValue: s)
         _library = StateObject(wrappedValue: PhotoLibrary(store: s))
+        // 웹 버전에서 옮겨 올 때 쓰던 임시 파일 — 옮기기가 끝나 더는 쓰지 않는다
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        for name in ["web-import.json", "photo-md5.json"] { try? FileManager.default.removeItem(at: dir.appendingPathComponent(name)) }
     }
 
     var body: some Scene {
