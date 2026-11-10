@@ -13,8 +13,8 @@
 
 맥 없이 GitHub Actions 로 만든다. `project.yml`(XcodeGen) → `.github/workflows/build.yml`.
 
-- `main` 이 아닌 브랜치에 푸시: 무서명 컴파일 확인
-- `main` 에 푸시: 서명해서 TestFlight 업로드 (Secrets 가 없으면 무서명 ipa 만 남긴다)
+- `ios` 등 일반 브랜치에 푸시: 무서명 컴파일 확인
+- `testflight` 브랜치에 푸시(`git push origin ios:testflight`): 서명해서 TestFlight 업로드 (Secrets 가 없으면 무서명 ipa 만 남긴다)
 
 필요한 Secrets 는 워크플로 파일 머리말에 적혀 있다. 번들 ID 는 `com.kouga.fursuitfryday`.
 
