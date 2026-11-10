@@ -329,6 +329,22 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         }.value
     }
 
+    /// 불러올 곳이 (폴더가 아니라) 앨범인가 — 앨범이어야 사진을 담을 수 있다
+    var sourceIsAlbum: Bool {
+        sourceId.map { PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [$0], options: nil).firstObject != nil } ?? false
+    }
+
+    /// 사진들을 고른 앨범에 담는다. 이미 앨범에 있는 사진은 건너뛴다.
+    func putInAlbum(_ assets: [PHAsset]) async throws {
+        guard let sourceId, sourceIsAlbum else { throw AlbumError.notAlbum }
+        let fresh = assets.filter { byId[$0.localIdentifier] == nil }
+        guard !fresh.isEmpty else { return }
+        try await PHPhotoLibrary.shared().performChanges {
+            guard let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject else { return }
+            PHAssetCollectionChangeRequest(for: album)?.addAssets(fresh as NSArray)
+        }
+    }
+
     /// 앨범에서 빼기만 한다. 사진은 사진첩에 그대로 남는다.
     func removeFromAlbum(_ assets: [PHAsset]) async throws -> Int {
         guard let sourceId, PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject != nil

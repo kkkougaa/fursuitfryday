@@ -46,6 +46,7 @@ struct SettingsView: View {
     @State private var strays: [PHAsset] = []
     @State private var cleaning = false
     @State private var wiping = false
+    @State private var sharing = false
 
     var body: some View {
         let o = store.catalog.opts
@@ -148,6 +149,12 @@ struct SettingsView: View {
             store.edit { $0.photos = [:] }
             report = "사진 기록을 지웠어요. 기록 가져오기로 웹 기록 파일을 다시 고르면 처음부터 다시 맞춥니다."
         }
+        .alert("드라이브 폴더 공유를 켜 주세요", isPresented: $sharing) {
+            Button("공유를 켰어요") { driveCheck() }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("구글 로그인 없이 사진을 받기 때문에, 웹 버전에 연결했던 드라이브 폴더가 \"링크가 있는 모든 사용자\"로 공유돼 있어야 합니다. 남은 기록의 사진만 줄인 그림으로 받아 사진첩 전체와 비교하고, 같은 그림일 때만 앨범에 넣고 기록을 붙입니다. 끝나면 공유를 다시 꺼 주세요.")
+        }
         .alert("끝났어요", isPresented: Binding(get: { report != nil }, set: { if !$0 { report = nil } })) {
             Button("확인") { report = nil }
         } message: {
@@ -172,6 +179,7 @@ struct SettingsView: View {
         }
         .confirmationDialog("짝을 못 찾은 웹 기록 \(web.pending.count)장", isPresented: $dropping, titleVisibility: .visible) {
             Button("사진첩에서 찾아 앨범에 넣기") { findInLibrary() }
+            Button("드라이브 사진과 비교해서 찾기") { sharing = true }
             Button("대기 기록 버리기", role: .destructive) { web.discardPending() }
             Button("취소", role: .cancel) {}
         } message: {
@@ -204,6 +212,30 @@ struct SettingsView: View {
                     : "사진첩 \(result.scanned.formatted())장을 훑었지만 웹 기록 \(waiting)장과 이름·해상도·촬영 시각이 모두 맞는 사진을 찾지 못했어요.") + skipped
             } catch {
                 report = (error as? PhotoLibrary.AlbumError)?.text ?? "앨범에 넣지 못했어요: \(error.localizedDescription)"
+            }
+            busy = nil
+            fraction = nil
+        }
+    }
+
+    /// 남은 웹 기록의 사진을 드라이브에서 받아 사진첩 전체와 그림으로 비교한다 (옮겨 올 때 한 번 쓰는 도구)
+    private func driveCheck() {
+        busy = "준비 중…"
+        Task {
+            do {
+                let out = try await DriveCheck.run(web: web, library: library, store: store, meta: meta) { text, part in
+                    busy = text
+                    fraction = part
+                }
+                var lines = ["같은 사진을 찾아 기록을 붙임 \(out.linked)장"]
+                if out.unsure > 0 { lines.append("후보는 있지만 같은 그림인지 애매해서 안 붙임 \(out.unsure)장") }
+                if out.missing > 0 { lines.append("사진첩에 해상도·촬영 시각이 맞는 사진이 없음 \(out.missing)장") }
+                if out.skipped > 0 { lines.append("촬영 정보가 없어 찾지 못함 \(out.skipped)장") }
+                if out.failed > 0 { lines.append("드라이브에서 받지 못함 \(out.failed)장") }
+                lines.append("아직 대기 중 \(web.pending.count)장")
+                report = lines.joined(separator: "\n")
+            } catch {
+                report = (error as? DriveCheck.Failure)?.text ?? (error as? PhotoLibrary.AlbumError)?.text ?? "비교하지 못했어요: \(error.localizedDescription)"
             }
             busy = nil
             fraction = nil

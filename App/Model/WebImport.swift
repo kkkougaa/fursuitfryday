@@ -22,6 +22,8 @@ final class WebImport: ObservableObject {
         var h: Int?
         /// 드라이브 파일의 md5 지문. 예전에 가져온 기록에는 없다.
         var md5: String?
+        /// 드라이브 파일 ID. 그 사진만 골라 받아 비교할 때 쓴다.
+        var fileId: String?
         var record: PhotoRecord
 
         var probe: WebProbe {
@@ -187,7 +189,7 @@ final class WebImport: ObservableObject {
         let isoPlain = ISO8601DateFormatter()
         var fresh: [Pending] = []
         for bucket in ["photos", "gone"] {
-            for (_, raw) in root[bucket] as? [String: Any] ?? [:] {
+            for (fileId, raw) in root[bucket] as? [String: Any] ?? [:] {
                 guard let p = raw as? [String: Any], let name = text(p["name"]) else { continue }
                 var r = PhotoRecord()
                 r.event = text(p["event"]).flatMap { skippedEvents.contains($0) ? nil : $0 }
@@ -201,7 +203,7 @@ final class WebImport: ObservableObject {
                 // 아무 기록도 없는 사진은 옮길 것이 없다
                 if r.event == nil, r.shooter == nil, r.people.isEmpty, r.tags.isEmpty, r.usages.isEmpty, r.plannedAt == nil { continue }
                 fresh.append(Pending(name: name, shotAt: text(p["shotAt"]), w: p["w"] as? Int, h: p["h"] as? Int,
-                                     md5: text(p["md5"])?.lowercased(), record: r))
+                                     md5: text(p["md5"])?.lowercased(), fileId: bucket == "photos" ? fileId : nil, record: r))
             }
         }
         pending = fresh
@@ -320,6 +322,26 @@ final class WebImport: ObservableObject {
             pending = left
             save()
         }
+        return done
+    }
+
+    /// 그림으로 같은 사진임을 확인한 짝에 기록을 붙인다 (DriveCheck 가 쓴다)
+    func attachVerified(_ pairs: [(fileId: String, asset: PHAsset)], library: PhotoLibrary, store: CatalogStore) -> Int {
+        var done = 0
+        for pair in pairs {
+            guard let i = pending.firstIndex(where: { $0.fileId == pair.fileId }) else { continue }
+            let p = pending.remove(at: i)
+            store.update([library.key(for: pair.asset)]) { r in
+                if r.event == nil, store.event(p.record.event) != nil { r.event = p.record.event }
+                if r.shooter == nil, store.shooter(p.record.shooter) != nil { r.shooter = p.record.shooter }
+                for id in p.record.people where !r.people.contains(id) && store.person(id) != nil { r.people.append(id) }
+                for t in p.record.tags where !r.tags.contains(t) { r.tags.append(t) }
+                for u in p.record.usages where !r.usages.contains(where: { $0.url == u.url && $0.date == u.date }) { r.usages.append(u) }
+                if r.plannedAt == nil, r.usages.isEmpty { r.plannedAt = p.record.plannedAt }
+            }
+            done += 1
+        }
+        if done > 0 { save() }
         return done
     }
 
