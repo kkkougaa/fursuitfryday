@@ -255,6 +255,27 @@ final class WebImport: ObservableObject {
     /// 대기 중인 기록들의 파일 이름(확장자 빼고 소문자)
     var pendingStems: Set<String> { Set(pending.map { ($0.name as NSString).deletingPathExtension.lowercased() }) }
 
+    /// 대기 중인 기록들의 "촬영 시각|가로x세로". 돌려 찍은 사진을 위해 가로세로를 바꾼 것도 넣는다.
+    var pendingShots: Set<String> {
+        var out = Set<String>()
+        for p in pending {
+            guard let shot = p.shotAt, let w = p.w, let h = p.h else { continue }
+            out.insert("\(shot)|\(w)x\(h)")
+            out.insert("\(shot)|\(h)x\(w)")
+        }
+        return out
+    }
+
+    /// 대기 중인 기록들의 촬영 날짜. 촬영 시각이 없는 기록이 하나라도 있으면 nil — 날짜로 좁힐 수 없다.
+    var pendingDays: Set<String>? {
+        var out = Set<String>()
+        for p in pending {
+            guard let shot = p.shotAt, shot.count >= 10 else { return nil }
+            out.insert(String(shot.prefix(10)))
+        }
+        return out
+    }
+
     func discardPending() {
         pending = []
         save()

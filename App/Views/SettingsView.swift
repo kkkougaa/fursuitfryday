@@ -40,6 +40,9 @@ struct SettingsView: View {
     /// 파일 고르기는 한 화면에 하나만 붙일 수 있어서, 무엇을 고르는지를 따로 둔다
     @State private var pickingPhotos = false
     @State private var busy: String?
+    /// 0~1. nil 이면 얼마나 걸릴지 모르는 작업.
+    @State private var fraction: Double?
+    @State private var report: String?
 
     var body: some View {
         let o = store.catalog.opts
@@ -60,12 +63,6 @@ struct SettingsView: View {
                 button("folder.fill.badge.plus", "blue", "파일에서 사진 가져오기", nil) {
                     pickingPhotos = true
                     importing = true
-                }
-                if let busy {
-                    HStack(spacing: 12) {
-                        ProgressView()
-                        Text(busy).font(.system(size: 15)).foregroundStyle(Tone.g700)
-                    }
                 }
             }
 
@@ -114,6 +111,32 @@ struct SettingsView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // 오래 걸리는 작업은 어디를 보고 있든 보이게 아래에 띄운다
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let busy {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(busy).font(.system(size: 15, weight: .bold).monospacedDigit()).foregroundStyle(Tone.g900)
+                    if let fraction {
+                        ProgressView(value: fraction).tint(Tone.blue)
+                    } else {
+                        ProgressView().frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .liquidGlassCard(cornerRadius: 22)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: busy == nil)
+        .allowsHitTesting(busy == nil)
+        .alert("끝났어요", isPresented: Binding(get: { report != nil }, set: { if !$0 { report = nil } })) {
+            Button("확인") { report = nil }
+        } message: {
+            Text(report ?? "")
+        }
         .navigationTitle("설정")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $theming) { ThemeSheet().presentationDetents([.medium, .large]) }
@@ -150,29 +173,42 @@ struct SettingsView: View {
 
     /// 사진첩 전체에서 웹 기록과 이름이 같은 사진을 찾아 앨범에 넣는다
     private func findInLibrary() {
+        let waiting = web.pending.count
         busy = "사진첩에서 찾는 중…"
+        fraction = 0
         Task {
             do {
-                let added = try await library.addToAlbum(named: web.pendingStems)
-                toast(added > 0 ? "\(added)장을 앨범에 넣었어요" : "이름이 같은 사진을 찾지 못했어요")
+                let result = try await library.addToAlbum(stems: web.pendingStems, shots: web.pendingShots, days: web.pendingDays) { seen, total in
+                    busy = "사진첩에서 찾는 중… \(seen.formatted()) / \(total.formatted())"
+                    fraction = total > 0 ? Double(seen) / Double(total) : nil
+                }
+                report = result.added > 0
+                    ? "사진첩 \(result.scanned.formatted())장을 훑어 \(result.added)장을 \"\(library.sourceTitle)\" 앨범에 넣었어요. 기록은 잠시 뒤 저절로 붙습니다."
+                    : "사진첩 \(result.scanned.formatted())장을 훑었지만 웹 기록 \(waiting)장과 같은 사진을 찾지 못했어요. 파일 이름도, 촬영 시각·해상도도 맞는 사진이 없습니다."
             } catch {
-                toast((error as? PhotoLibrary.AlbumError)?.text ?? "앨범에 넣지 못했어요")
+                report = (error as? PhotoLibrary.AlbumError)?.text ?? "앨범에 넣지 못했어요: \(error.localizedDescription)"
             }
             busy = nil
+            fraction = nil
         }
     }
 
     /// 파일에서 고른 사진을 사진첩에 저장하고 앨범에 넣는다
     private func importPhotos(_ urls: [URL]) {
-        busy = "사진 가져오는 중… 0/\(urls.count)"
+        busy = "사진 가져오는 중… 0 / \(urls.count)"
+        fraction = 0
         Task {
             do {
-                let done = try await library.importFiles(urls) { n in busy = "사진 가져오는 중… \(n)/\(urls.count)" }
-                toast("\(done)장을 앨범에 넣었어요" + (done < urls.count ? " · \(urls.count - done)장 실패" : ""))
+                let done = try await library.importFiles(urls) { n in
+                    busy = "사진 가져오는 중… \(n) / \(urls.count)"
+                    fraction = Double(n) / Double(urls.count)
+                }
+                report = "\(done)장을 \"\(library.sourceTitle)\" 앨범에 넣었어요." + (done < urls.count ? " \(urls.count - done)장은 가져오지 못했어요." : "")
             } catch {
-                toast((error as? PhotoLibrary.AlbumError)?.text ?? "사진을 가져오지 못했어요")
+                report = (error as? PhotoLibrary.AlbumError)?.text ?? "사진을 가져오지 못했어요: \(error.localizedDescription)"
             }
             busy = nil
+            fraction = nil
         }
     }
 

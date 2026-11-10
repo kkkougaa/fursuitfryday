@@ -11,6 +11,26 @@ struct SourceInfo: Identifiable {
     let photoCount: Int?
 }
 
+/// 여러 갈래가 함께 쓰는 훑기 결과
+private final class ScanState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen = 0
+    private(set) var hits: [PHAsset] = []
+
+    func add(_ n: Int) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        seen += n
+        return seen
+    }
+
+    func collect(_ assets: [PHAsset]) {
+        lock.lock()
+        defer { lock.unlock() }
+        hits += assets
+    }
+}
+
 private final class Box<V>: @unchecked Sendable {
     var value: V
     init(_ value: V) { self.value = value }
@@ -212,29 +232,72 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         var text: String { "폴더가 아니라 앨범을 골라야 넣을 수 있어요" }
     }
 
-    /// 사진첩 전체에서 파일 이름(확장자 빼고, 대소문자 무시)이 맞는 사진을 찾아 고른 앨범에 넣는다.
-    /// 이미 앨범에 있는 사진은 건너뛴다. 넣은 장수를 돌려준다.
-    func addToAlbum(named stems: Set<String>) async throws -> Int {
+    /// 사진첩 전체에서 웹 기록과 같은 사진을 찾아 고른 앨범에 넣는다. 이미 앨범에 있는 사진은 건너뛴다.
+    ///
+    /// 같은 사진인지는 두 가지로 본다:
+    /// - 촬영 시각 + 해상도가 같다 (사진을 열지 않고 바로 알 수 있어서 빠르다)
+    /// - 원본 파일 이름이 같다 (사진마다 따로 물어봐야 해서 느리다 — 그래서 웹 기록에 있는 촬영 날짜의
+    ///   사진에만 물어본다. 촬영 시각이 없는 기록이 섞여 있으면 days 가 nil 이고 전부 물어본다)
+    ///
+    /// 여러 갈래로 나눠 동시에 훑고, 진행 상황(훑은 장수, 전체 장수)을 알려 준다.
+    func addToAlbum(stems: Set<String>, shots: Set<String>, days: Set<String>?,
+                    progress: @escaping @MainActor (Int, Int) -> Void) async throws -> (added: Int, scanned: Int) {
         guard let sourceId, PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject != nil
         else { throw AlbumError.notAlbum }
         let inAlbum = Set(all.map(\.localIdentifier))
         return try await Task.detached(priority: .userInitiated) {
-            var hits: [PHAsset] = []
             let o = PHFetchOptions()
             o.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
-            PHAsset.fetchAssets(with: o).enumerateObjects { asset, _, _ in
-                guard !inAlbum.contains(asset.localIdentifier),
-                      let name = PHAssetResource.assetResources(for: asset).first?.originalFilename
-                else { return }
-                if stems.contains((name as NSString).deletingPathExtension.lowercased()) { hits.append(asset) }
+            let result = PHAsset.fetchAssets(with: o)
+            let total = result.count
+            let stamp = DateFormatter()
+            stamp.locale = Locale(identifier: "en_US_POSIX")
+            stamp.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            let state = ScanState()
+            let lanes = 8
+            let size = max(1, (total + lanes - 1) / lanes)
+
+            func sameName(_ asset: PHAsset) -> Bool {
+                guard let name = PHAssetResource.assetResources(for: asset).first?.originalFilename else { return false }
+                return stems.contains((name as NSString).deletingPathExtension.lowercased())
             }
-            guard !hits.isEmpty else { return 0 }
-            let found = hits
+
+            DispatchQueue.concurrentPerform(iterations: lanes) { lane in
+                let lo = lane * size, hi = min(total, lo + size)
+                guard lo < hi else { return }
+                var mine: [PHAsset] = []
+                var since = 0
+                for i in lo..<hi {
+                    let asset = result.object(at: i)
+                    if !inAlbum.contains(asset.localIdentifier) {
+                        if let shot = asset.creationDate {
+                            let text = stamp.string(from: shot)
+                            if shots.contains("\(text)|\(asset.pixelWidth)x\(asset.pixelHeight)") {
+                                mine.append(asset)
+                            } else if days?.contains(String(text.prefix(10))) ?? true, sameName(asset) {
+                                mine.append(asset)
+                            }
+                        } else if days == nil, sameName(asset) {
+                            mine.append(asset)
+                        }
+                    }
+                    since += 1
+                    if since == 200 || i == hi - 1 {
+                        let seen = state.add(since)
+                        since = 0
+                        Task { @MainActor in progress(seen, total) }
+                    }
+                }
+                state.collect(mine)
+            }
+
+            let found = state.hits
+            guard !found.isEmpty else { return (0, total) }
             try await PHPhotoLibrary.shared().performChanges {
                 guard let album = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [sourceId], options: nil).firstObject else { return }
                 PHAssetCollectionChangeRequest(for: album)?.addAssets(found as NSArray)
             }
-            return found.count
+            return (found.count, total)
         }.value
     }
 
