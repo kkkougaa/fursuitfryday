@@ -231,7 +231,7 @@ struct HomeView: View {
         .toolbarTitleDisplayMode(.inlineLarge)
         .task(id: "\(meta.metas.count)-\(meta.names.count)-\(library.all.count)") {
             Suggestion.applyRules(library: library, store: store, meta: meta)
-            let linked = WebImport.shared.match(library: library, store: store, meta: meta)
+            let linked = await WebImport.shared.match(library: library, store: store, meta: meta)
             if linked > 0 { toast("웹 기록 \(linked)장을 사진에 연결했어요") }
         }
         .task(id: "\(library.all.count)-\(store.catalog.people.count)-\(suitTick)") { await scanSuits() }

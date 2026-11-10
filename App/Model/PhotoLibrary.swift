@@ -243,7 +243,7 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     /// 사진첩 전체에서 웹 기록과 같은 사진을 찾아 고른 앨범에 넣는다. 이미 앨범에 있는 사진은 건너뛴다.
     ///
     /// 이름만 같다고 같은 사진이 아니다 — IMG_1234 같은 이름은 사진첩에 얼마든지 겹친다.
-    /// 그래서 WebMatch 의 규칙(이름 + 해상도 + 촬영 시각)이 다 맞아야 넣는다.
+    /// 그래서 WebMatch 의 규칙(이름 + 해상도 + 촬영 시각)이 다 맞거나, 파일 지문(md5)이 같아야 넣는다.
     /// 촬영 시각이나 해상도가 없는 웹 기록은 확인할 길이 없어서 여기서는 찾지 않는다(skipped).
     ///
     /// 해상도와 촬영 시각(분·초)으로 먼저 걸러 낸 사진에만 파일 이름을 물어보므로 빠르다.
@@ -266,6 +266,7 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 marks.insert(String(shot.suffix(5)))
             }
             let names = byStem
+            let hashes = Set(usable.compactMap(\.md5))
             let counts = keyCount
             let knownSizes = sizes
             let knownMarks = marks
@@ -301,12 +302,19 @@ final class PhotoLibrary: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                     if let stem, let same = names[stem], same.contains(where: { WebMatch.fits($0, stem: stem, shot: shot, size: size, stamp: stamp) }) {
                         state.collect([asset])
                     } else if counts["\(shot)|\(size)"] != nil {
-                        // 이름은 다르지만 촬영 시각·해상도가 똑같다 — 저장하면서 이름이 바뀐 사진일 수 있다
-                        state.maybe("\(shot)|\(size)", asset)
+                        // 이름은 다르지만 촬영 시각·해상도가 똑같다 — 저장하면서 이름이 바뀐 사진일 수 있다.
+                        // 파일 지문으로 확인한다. 지문이 웹 기록에 있으면 같은 파일, 없으면 다른 사진(연사의 옆 컷 등)이다.
+                        if !hashes.isEmpty, let hash = FileHasher.shared.md5(asset) {
+                            if hashes.contains(hash) { state.collect([asset]) }
+                        } else {
+                            // 지문을 구할 수 없을 때만 예전 방식(장수 비교)으로 넘긴다
+                            state.maybe("\(shot)|\(size)", asset)
+                        }
                     }
                 }
             }
 
+            FileHasher.shared.save()
             // 이름이 바뀐 후보는, 같은 시각·해상도의 사진이 웹 기록 수보다 많으면(연사 등) 어느 것인지 알 수 없으니 넣지 않는다
             var found = state.hits
             for (key, assets) in state.loose where assets.count <= (counts[key] ?? 0) { found += assets }

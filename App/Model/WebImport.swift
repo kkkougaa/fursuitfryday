@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Photos
 import SwiftUI
@@ -19,15 +20,19 @@ final class WebImport: ObservableObject {
         var shotAt: String?
         var w: Int?
         var h: Int?
+        /// 드라이브 파일의 md5 지문. 예전에 가져온 기록에는 없다.
+        var md5: String?
         var record: PhotoRecord
 
         var probe: WebProbe {
-            WebProbe(stem: WebMatch.stem(name), shot: shotAt, size: (w != nil && h != nil) ? WebMatch.size(w ?? 0, h ?? 0) : nil)
+            WebProbe(stem: WebMatch.stem(name), shot: shotAt, size: (w != nil && h != nil) ? WebMatch.size(w ?? 0, h ?? 0) : nil,
+                     md5: md5)
         }
     }
 
     @Published private(set) var pending: [Pending] = []
     private let url: URL
+    private var matching = false
 
     private init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -195,7 +200,8 @@ final class WebImport: ObservableObject {
                 if let planned = text(p["plannedAt"]) { r.plannedAt = iso.date(from: planned) ?? isoPlain.date(from: planned) }
                 // 아무 기록도 없는 사진은 옮길 것이 없다
                 if r.event == nil, r.shooter == nil, r.people.isEmpty, r.tags.isEmpty, r.usages.isEmpty, r.plannedAt == nil { continue }
-                fresh.append(Pending(name: name, shotAt: text(p["shotAt"]), w: p["w"] as? Int, h: p["h"] as? Int, record: r))
+                fresh.append(Pending(name: name, shotAt: text(p["shotAt"]), w: p["w"] as? Int, h: p["h"] as? Int,
+                                     md5: text(p["md5"])?.lowercased(), record: r))
             }
         }
         pending = fresh
@@ -204,22 +210,52 @@ final class WebImport: ObservableObject {
     }
 
     /// 대기 중인 웹 사진 기록을 앨범의 사진과 짝짓는다. 붙인 장수를 돌려준다.
-    /// 이름만으로 붙이지 않는다 — WebMatch 의 규칙을 통과한 사진에만 붙인다.
+    ///
+    /// 1. 파일 지문(md5)이 같으면 같은 사진이다 — 이름이 바뀌었든 연사든 상관없이 정확하다.
+    /// 2. 지문을 못 구했거나 다르면(저장하면서 다시 압축된 사진) 이름 + 해상도 + 촬영 시각이 다 맞을 때만.
     @discardableResult
-    func match(library: PhotoLibrary, store: CatalogStore, meta: MetaStore) -> Int {
-        guard !pending.isEmpty, !library.all.isEmpty else { return 0 }
+    func match(library: PhotoLibrary, store: CatalogStore, meta: MetaStore) async -> Int {
+        guard !pending.isEmpty, !library.all.isEmpty, !matching else { return 0 }
+        matching = true
+        defer { matching = false }
         let stamp = WebMatch.stamp()
         struct Seen {
             let asset: PHAsset
             let shot: String?
             let size: String
         }
+        let seen = library.all.map { a in
+            Seen(asset: a, shot: a.creationDate.map { stamp.string(from: $0) }, size: WebMatch.size(a.pixelWidth, a.pixelHeight))
+        }
+
+        // 지문은 파일을 통째로 읽어야 나온다. 웹 기록과 해상도·촬영 시각(분·초)이 겹치는 사진만 뒤에서 계산한다.
+        let wanted = Set(pending.compactMap(\.md5))
+        if !wanted.isEmpty {
+            var sizes = Set<String>()
+            var marks = Set<String>()
+            for p in pending where p.md5 != nil {
+                if let size = p.probe.size { sizes.insert(size) }
+                if let shot = p.shotAt { marks.insert(String(shot.suffix(5))) }
+            }
+            let todo = seen.filter { s in
+                FileHasher.shared.cached(s.asset.localIdentifier) == nil && sizes.contains(s.size)
+                    && (s.shot.map { marks.contains(String($0.suffix(5))) } ?? false)
+            }.map(\.asset)
+            if !todo.isEmpty {
+                await Task.detached(priority: .utility) {
+                    DispatchQueue.concurrentPerform(iterations: todo.count) { i in _ = FileHasher.shared.md5(todo[i]) }
+                    FileHasher.shared.save()
+                }.value
+            }
+        }
+
+        var byHash: [String: Seen] = [:]
         var byName: [String: [Seen]] = [:]
         var byShot: [String: [Seen]] = [:]
-        for a in library.all {
-            let seen = Seen(asset: a, shot: a.creationDate.map { stamp.string(from: $0) }, size: WebMatch.size(a.pixelWidth, a.pixelHeight))
-            if let name = meta.names[a.localIdentifier] { byName[WebMatch.stem(name), default: []].append(seen) }
-            if let shot = seen.shot { byShot["\(shot)|\(seen.size)", default: []].append(seen) }
+        for s in seen {
+            if let hash = FileHasher.shared.cached(s.asset.localIdentifier), byHash[hash] == nil { byHash[hash] = s }
+            if let name = meta.names[s.asset.localIdentifier] { byName[WebMatch.stem(name), default: []].append(s) }
+            if let shot = s.shot { byShot["\(shot)|\(s.size)", default: []].append(s) }
         }
 
         var left: [Pending] = []
@@ -229,11 +265,14 @@ final class WebImport: ObservableObject {
             let probe = p.probe
             var hit: PHAsset?
             let named = (byName[probe.stem] ?? []).filter { !taken.contains($0.asset.localIdentifier) }
-            if probe.shot != nil, probe.size != nil {
+            if let md5 = p.md5, let same = byHash[md5], !taken.contains(same.asset.localIdentifier) {
+                // 파일이 완전히 같다
+                hit = same.asset
+            } else if probe.shot != nil, probe.size != nil {
                 // 이름 + 해상도 + 촬영 시각
                 hit = named.first { WebMatch.fits(probe, stem: probe.stem, shot: $0.shot, size: $0.size, stamp: stamp) }?.asset
-                if hit == nil, let shot = probe.shot, let size = probe.size {
-                    // 이름이 바뀐 사진 — 촬영 시각·해상도가 같은 사진이 딱 하나일 때만
+                if hit == nil, p.md5 == nil, let shot = probe.shot, let size = probe.size {
+                    // 지문이 없는 옛 기록 — 촬영 시각·해상도가 같은 사진이 딱 하나일 때만
                     let same = (byShot["\(shot)|\(size)"] ?? []).filter { !taken.contains($0.asset.localIdentifier) }
                     if same.count == 1 { hit = same[0].asset }
                 }
@@ -277,8 +316,10 @@ final class WebImport: ObservableObject {
         let shot = asset.creationDate.map { stamp.string(from: $0) }
         let size = WebMatch.size(asset.pixelWidth, asset.pixelHeight)
         let stem = name.map(WebMatch.stem)
+        let hash = FileHasher.shared.cached(asset.localIdentifier)
         return !pending.contains { p in
             let probe = p.probe
+            if let hash, p.md5 == hash { return true }
             if let stem, WebMatch.fits(probe, stem: stem, shot: shot, size: size, stamp: stamp) { return true }
             return probe.shot != nil && probe.shot == shot && probe.size == size
         }
@@ -298,12 +339,80 @@ struct WebProbe: Sendable {
     let shot: String?
     /// "짧은변x긴변" — 돌려 찍은 사진도 같게 나온다
     let size: String?
+    /// 원본 파일의 md5 지문
+    var md5: String?
+}
+
+/// 사진 원본 파일의 md5 지문. 웹 버전이 드라이브 파일마다 적어 둔 값과 같으면 완전히 같은 파일이다.
+/// 파일을 통째로 읽어야 해서 느리다 — 한 번 구한 값은 기기에 적어 두고, 꼭 필요한 사진에만 계산한다.
+final class FileHasher: @unchecked Sendable {
+    static let shared = FileHasher()
+
+    private let lock = NSLock()
+    private var cache: [String: String] = [:]
+    private var dirty = false
+    private let url: URL
+
+    private init() {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        url = dir.appendingPathComponent("photo-md5.json")
+        if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode([String: String].self, from: data) {
+            cache = saved
+        }
+    }
+
+    func cached(_ localId: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cache[localId]
+    }
+
+    /// 끝날 때까지 기다린다 — 화면 쪽에서 부르면 안 된다. iCloud 에만 있는 원본은 내려받는다.
+    func md5(_ asset: PHAsset) -> String? {
+        if let known = cached(asset.localIdentifier) { return known }
+        let resources = PHAssetResource.assetResources(for: asset)
+        // 편집본이 아니라 처음 들어온 원본을 읽는다
+        guard let original = resources.first(where: { $0.type == .photo }) ?? resources.first else { return nil }
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        let job = HashJob()
+        let wait = DispatchSemaphore(value: 0)
+        PHAssetResourceManager.default().requestData(for: original, options: options, dataReceivedHandler: { chunk in
+            job.hasher.update(data: chunk)
+        }, completionHandler: { error in
+            job.failed = error != nil
+            wait.signal()
+        })
+        wait.wait()
+        guard !job.failed else { return nil }
+        let hex = job.hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        lock.lock()
+        cache[asset.localIdentifier] = hex
+        dirty = true
+        lock.unlock()
+        return hex
+    }
+
+    func save() {
+        lock.lock()
+        let snapshot = dirty ? cache : nil
+        dirty = false
+        lock.unlock()
+        if let snapshot, let data = try? JSONEncoder().encode(snapshot) { try? data.write(to: url, options: .atomic) }
+    }
+}
+
+private final class HashJob: @unchecked Sendable {
+    var hasher = Insecure.MD5()
+    var failed = false
 }
 
 /// "같은 사진인가"의 규칙. 사진첩에서 찾을 때와 앨범에서 기록을 붙일 때 똑같이 쓴다.
 ///
-/// 파일 이름만으로는 같은 사진이라고 할 수 없다(IMG_1234, DSC_0001 은 얼마든지 겹친다).
-/// 그래서 **이름 + 해상도 + 촬영 시각**이 다 맞아야 같은 사진으로 본다.
+/// 가장 확실한 건 파일 지문(md5)이다 — 같으면 완전히 같은 파일이다. 다만 저장하면서 다시 압축된 사진은
+/// 눈으로는 같아도 지문이 다르다. 그런 사진을 위해 두 번째 규칙을 둔다:
+/// 파일 이름만으로는 같은 사진이라고 할 수 없으니(IMG_1234, DSC_0001 은 얼마든지 겹친다)
+/// **이름 + 해상도 + 촬영 시각**이 다 맞아야 같은 사진으로 본다.
 enum WebMatch {
     static func stamp() -> DateFormatter {
         let f = DateFormatter()

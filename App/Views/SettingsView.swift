@@ -285,8 +285,13 @@ struct SettingsView: View {
         if WebImport.looksLikeWeb(data) {
             do {
                 let summary = try web.run(data, store: store)
-                let linked = web.match(library: library, store: store, meta: meta)
-                toast("웹 기록을 가져왔어요 · \(summary) · 연결 \(linked)장")
+                let withHash = web.pending.filter { $0.md5 != nil }.count
+                busy = "웹 기록을 사진과 맞추는 중…"
+                Task {
+                    let linked = await web.match(library: library, store: store, meta: meta)
+                    busy = nil
+                    report = "웹 기록을 가져왔어요.\n\(summary)\n파일 지문이 있는 기록 \(withHash)장 · 앨범 사진에 연결 \(linked)장 · 대기 \(web.pending.count)장"
+                }
             } catch {
                 toast("웹 기록 파일을 읽지 못했어요")
             }
