@@ -20,6 +20,10 @@ final class WebImport: ObservableObject {
         var w: Int?
         var h: Int?
         var record: PhotoRecord
+
+        var probe: WebProbe {
+            WebProbe(stem: WebMatch.stem(name), shot: shotAt, size: (w != nil && h != nil) ? WebMatch.size(w ?? 0, h ?? 0) : nil)
+        }
     }
 
     @Published private(set) var pending: [Pending] = []
@@ -199,41 +203,53 @@ final class WebImport: ObservableObject {
         return "행사 \(events.count) · 사진사 \(shooters.count) · 퍼슈트 \(people.count) · 사진 기록 \(fresh.count)장"
     }
 
-    /// 대기 중인 웹 사진 기록을 사진첩의 사진과 짝짓는다. 붙인 장수를 돌려준다.
+    /// 대기 중인 웹 사진 기록을 앨범의 사진과 짝짓는다. 붙인 장수를 돌려준다.
+    /// 이름만으로 붙이지 않는다 — WebMatch 의 규칙을 통과한 사진에만 붙인다.
     @discardableResult
     func match(library: PhotoLibrary, store: CatalogStore, meta: MetaStore) -> Int {
         guard !pending.isEmpty, !library.all.isEmpty else { return 0 }
-        func stem(_ name: String) -> String { (name as NSString).deletingPathExtension.lowercased() }
-        let stamp = DateFormatter()
-        stamp.locale = Locale(identifier: "en_US_POSIX")
-        stamp.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-
-        var byName: [String: [PHAsset]] = [:]
-        var byShot: [String: [PHAsset]] = [:]
+        let stamp = WebMatch.stamp()
+        struct Seen {
+            let asset: PHAsset
+            let shot: String?
+            let size: String
+        }
+        var byName: [String: [Seen]] = [:]
+        var byShot: [String: [Seen]] = [:]
         for a in library.all {
-            if let name = meta.names[a.localIdentifier] { byName[stem(name), default: []].append(a) }
-            if let shot = a.creationDate { byShot["\(stamp.string(from: shot))|\(a.pixelWidth)x\(a.pixelHeight)", default: []].append(a) }
+            let seen = Seen(asset: a, shot: a.creationDate.map { stamp.string(from: $0) }, size: WebMatch.size(a.pixelWidth, a.pixelHeight))
+            if let name = meta.names[a.localIdentifier] { byName[WebMatch.stem(name), default: []].append(seen) }
+            if let shot = seen.shot { byShot["\(shot)|\(seen.size)", default: []].append(seen) }
         }
 
         var left: [Pending] = []
+        var taken = Set<String>()
         var done = 0
         for p in pending {
+            let probe = p.probe
             var hit: PHAsset?
-            let named = byName[stem(p.name)] ?? []
-            if named.count == 1 {
-                hit = named[0]
-            } else if named.count > 1, let shot = p.shotAt {
-                // 이름이 겹치면 촬영 시각으로 가른다
-                hit = named.first { a in a.creationDate.map { stamp.string(from: $0) } == shot }
-            } else if named.isEmpty, let shot = p.shotAt, let w = p.w, let h = p.h {
-                // 이름이 바뀌어 들어온 사진 — 촬영 시각과 해상도가 유일하게 맞을 때만
-                let same = (byShot["\(shot)|\(w)x\(h)"] ?? []) + (byShot["\(shot)|\(h)x\(w)"] ?? [])
-                if same.count == 1 { hit = same[0] }
+            let named = (byName[probe.stem] ?? []).filter { !taken.contains($0.asset.localIdentifier) }
+            if probe.shot != nil, probe.size != nil {
+                // 이름 + 해상도 + 촬영 시각
+                hit = named.first { WebMatch.fits(probe, stem: probe.stem, shot: $0.shot, size: $0.size, stamp: stamp) }?.asset
+                if hit == nil, let shot = probe.shot, let size = probe.size {
+                    // 이름이 바뀐 사진 — 촬영 시각·해상도가 같은 사진이 딱 하나일 때만
+                    let same = (byShot["\(shot)|\(size)"] ?? []).filter { !taken.contains($0.asset.localIdentifier) }
+                    if same.count == 1 { hit = same[0].asset }
+                }
+            } else if let size = probe.size {
+                // 촬영 시각이 없는 기록 — 이름과 해상도가 맞는 사진이 딱 하나일 때만
+                let same = named.filter { $0.size == size }
+                if same.count == 1 { hit = same[0].asset }
+            } else if named.count == 1 {
+                // 촬영 정보가 아예 없는 기록 — 앨범 안에 그 이름이 하나뿐일 때만
+                hit = named[0].asset
             }
             guard let asset = hit else {
                 left.append(p)
                 continue
             }
+            taken.insert(asset.localIdentifier)
             store.update([library.key(for: asset)]) { r in
                 // 이 앱에서 이미 정한 것은 그대로 두고 빈 곳만 채운다
                 if r.event == nil, store.event(p.record.event) != nil { r.event = p.record.event }
@@ -252,32 +268,66 @@ final class WebImport: ObservableObject {
         return done
     }
 
-    /// 대기 중인 기록들의 파일 이름(확장자 빼고 소문자)
-    var pendingStems: Set<String> { Set(pending.map { ($0.name as NSString).deletingPathExtension.lowercased() }) }
+    /// 대기 중인 기록을 대조용으로 간추린 것
+    var probes: [WebProbe] { pending.map(\.probe) }
 
-    /// 대기 중인 기록들의 "촬영 시각|가로x세로". 돌려 찍은 사진을 위해 가로세로를 바꾼 것도 넣는다.
-    var pendingShots: Set<String> {
-        var out = Set<String>()
-        for p in pending {
-            guard let shot = p.shotAt, let w = p.w, let h = p.h else { continue }
-            out.insert("\(shot)|\(w)x\(h)")
-            out.insert("\(shot)|\(h)x\(w)")
+    /// 앨범 사진 가운데 대기 중인 웹 기록 어느 것과도 맞지 않는 사진인가 (잘못 들어온 사진을 가려낼 때 쓴다)
+    func fitsNothing(_ asset: PHAsset, name: String?) -> Bool {
+        let stamp = WebMatch.stamp()
+        let shot = asset.creationDate.map { stamp.string(from: $0) }
+        let size = WebMatch.size(asset.pixelWidth, asset.pixelHeight)
+        let stem = name.map(WebMatch.stem)
+        return !pending.contains { p in
+            let probe = p.probe
+            if let stem, WebMatch.fits(probe, stem: stem, shot: shot, size: size, stamp: stamp) { return true }
+            return probe.shot != nil && probe.shot == shot && probe.size == size
         }
-        return out
-    }
-
-    /// 대기 중인 기록들의 촬영 날짜. 촬영 시각이 없는 기록이 하나라도 있으면 nil — 날짜로 좁힐 수 없다.
-    var pendingDays: Set<String>? {
-        var out = Set<String>()
-        for p in pending {
-            guard let shot = p.shotAt, shot.count >= 10 else { return nil }
-            out.insert(String(shot.prefix(10)))
-        }
-        return out
     }
 
     func discardPending() {
         pending = []
         save()
+    }
+}
+
+/// 웹 기록 한 장을 사진첩 사진과 대조할 때 쓰는 값
+struct WebProbe: Sendable {
+    /// 파일 이름에서 확장자를 떼고 소문자로
+    let stem: String
+    /// "YYYY-MM-DDTHH:MM:SS" (기기 시간대 기준 촬영 시각)
+    let shot: String?
+    /// "짧은변x긴변" — 돌려 찍은 사진도 같게 나온다
+    let size: String?
+}
+
+/// "같은 사진인가"의 규칙. 사진첩에서 찾을 때와 앨범에서 기록을 붙일 때 똑같이 쓴다.
+///
+/// 파일 이름만으로는 같은 사진이라고 할 수 없다(IMG_1234, DSC_0001 은 얼마든지 겹친다).
+/// 그래서 **이름 + 해상도 + 촬영 시각**이 다 맞아야 같은 사진으로 본다.
+enum WebMatch {
+    static func stamp() -> DateFormatter {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return f
+    }
+
+    static func stem(_ name: String) -> String { (name as NSString).deletingPathExtension.lowercased() }
+
+    static func size(_ w: Int, _ h: Int) -> String { "\(min(w, h))x\(max(w, h))" }
+
+    /// 촬영 시각이 같은가. 사진에 시간대가 적혀 있으면 사진첩이 그만큼 옮겨서 보여주므로,
+    /// 분·초가 같고 30분 단위로만 어긋난 것(시간대 차이)은 같은 시각으로 본다.
+    static func sameShot(_ a: String, _ b: String, _ stamp: DateFormatter) -> Bool {
+        if a == b { return true }
+        guard let x = stamp.date(from: a), let y = stamp.date(from: b) else { return false }
+        let gap = abs(x.timeIntervalSince(y))
+        return gap <= 14 * 3600 && gap.truncatingRemainder(dividingBy: 1800) == 0
+    }
+
+    /// 이름·해상도·촬영 시각이 모두 맞는가
+    static func fits(_ p: WebProbe, stem: String, shot: String?, size: String, stamp: DateFormatter) -> Bool {
+        guard p.stem == stem, let want = p.size, want == size, let a = p.shot, let b = shot else { return false }
+        return sameShot(a, b, stamp)
     }
 }

@@ -43,6 +43,9 @@ struct SettingsView: View {
     /// 0~1. nil 이면 얼마나 걸릴지 모르는 작업.
     @State private var fraction: Double?
     @State private var report: String?
+    @State private var strays: [PHAsset] = []
+    @State private var cleaning = false
+    @State private var wiping = false
 
     var body: some View {
         let o = store.catalog.opts
@@ -64,6 +67,7 @@ struct SettingsView: View {
                     pickingPhotos = true
                     importing = true
                 }
+                button("rectangle.stack.badge.minus", "amber", "기록 없는 사진 앨범에서 빼기", nil) { findStrays() }
             }
 
             Section("사람과 퍼슈트") {
@@ -92,6 +96,7 @@ struct SettingsView: View {
                 if !web.pending.isEmpty {
                     button("clock.arrow.circlepath", "amber", "웹 기록 대기", "\(web.pending.count)장") { dropping = true }
                 }
+                button("trash", "red", "사진 기록 초기화", "\(store.catalog.photos.count)장") { wiping = true }
             } header: {
                 Text("기록")
             } footer: {
@@ -132,6 +137,17 @@ struct SettingsView: View {
         }
         .animation(.snappy(duration: 0.25), value: busy == nil)
         .allowsHitTesting(busy == nil)
+        .confirm("기록 없는 사진 \(strays.count)장을 앨범에서 뺄까요?",
+                 message: "\"\(library.sourceTitle)\" 앨범에서, 이 앱에 아무 기록이 없고 대기 중인 웹 기록과도 맞지 않는 사진입니다. 앨범에서만 빠지고 사진은 사진첩에 그대로 남습니다. 아직 분류하지 않은 새 사진도 여기에 포함됩니다.",
+                 action: "앨범에서 빼기", isPresented: $cleaning) {
+            removeStrays()
+        }
+        .confirm("사진 기록 \(store.catalog.photos.count)장을 모두 지울까요?",
+                 message: "사진마다 붙은 행사·사진사·퍼슈트·태그·사용 이력이 사라집니다. 행사·사진사·퍼슈트 목록과 일정은 남습니다. 웹 기록을 잘못 붙인 뒤 처음부터 다시 가져올 때 씁니다. 되돌릴 수 없으니 먼저 기록 내보내기를 해 두세요.",
+                 action: "사진 기록 지우기", isPresented: $wiping) {
+            store.edit { $0.photos = [:] }
+            report = "사진 기록을 지웠어요. 기록 가져오기로 웹 기록 파일을 다시 고르면 처음부터 다시 맞춥니다."
+        }
         .alert("끝났어요", isPresented: Binding(get: { report != nil }, set: { if !$0 { report = nil } })) {
             Button("확인") { report = nil }
         } message: {
@@ -178,18 +194,48 @@ struct SettingsView: View {
         fraction = 0
         Task {
             do {
-                let result = try await library.addToAlbum(stems: web.pendingStems, shots: web.pendingShots, days: web.pendingDays) { seen, total in
+                let result = try await library.addToAlbum(probes: web.probes) { seen, total in
                     busy = "사진첩에서 찾는 중… \(seen.formatted()) / \(total.formatted())"
                     fraction = total > 0 ? Double(seen) / Double(total) : nil
                 }
-                report = result.added > 0
-                    ? "사진첩 \(result.scanned.formatted())장을 훑어 \(result.added)장을 \"\(library.sourceTitle)\" 앨범에 넣었어요. 기록은 잠시 뒤 저절로 붙습니다."
-                    : "사진첩 \(result.scanned.formatted())장을 훑었지만 웹 기록 \(waiting)장과 같은 사진을 찾지 못했어요. 파일 이름도, 촬영 시각·해상도도 맞는 사진이 없습니다."
+                let skipped = result.skipped > 0 ? " 촬영 시각이나 해상도가 없는 웹 기록 \(result.skipped)장은 확인할 수 없어 찾지 않았어요." : ""
+                report = (result.added > 0
+                    ? "사진첩 \(result.scanned.formatted())장을 훑어 \(result.added)장을 \"\(library.sourceTitle)\" 앨범에 넣었어요. 이름·해상도·촬영 시각이 모두 맞는 사진만 넣었습니다. 기록은 잠시 뒤 저절로 붙습니다."
+                    : "사진첩 \(result.scanned.formatted())장을 훑었지만 웹 기록 \(waiting)장과 이름·해상도·촬영 시각이 모두 맞는 사진을 찾지 못했어요.") + skipped
             } catch {
                 report = (error as? PhotoLibrary.AlbumError)?.text ?? "앨범에 넣지 못했어요: \(error.localizedDescription)"
             }
             busy = nil
             fraction = nil
+        }
+    }
+
+    /// 앨범 안에서, 기록도 없고 대기 중인 웹 기록과도 맞지 않는 사진을 센다
+    private func findStrays() {
+        strays = library.all.filter { a in
+            let r = store.record(library.key(for: a))
+            let empty = r.event == nil && r.shooter == nil && r.people.isEmpty && r.tags.isEmpty && r.usages.isEmpty && r.plannedAt == nil
+            return empty && web.fitsNothing(a, name: meta.names[a.localIdentifier])
+        }
+        if strays.isEmpty {
+            report = "앨범에서 뺄 사진이 없어요. 모든 사진에 기록이 있거나 대기 중인 웹 기록과 맞습니다."
+        } else {
+            cleaning = true
+        }
+    }
+
+    private func removeStrays() {
+        let targets = strays
+        busy = "앨범에서 빼는 중…"
+        Task {
+            do {
+                let n = try await library.removeFromAlbum(targets)
+                report = "\(n)장을 앨범에서 뺐어요. 사진은 사진첩에 그대로 있습니다."
+            } catch {
+                report = (error as? PhotoLibrary.AlbumError)?.text ?? "앨범에서 빼지 못했어요: \(error.localizedDescription)"
+            }
+            strays = []
+            busy = nil
         }
     }
 
