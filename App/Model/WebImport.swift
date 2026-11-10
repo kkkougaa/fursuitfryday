@@ -211,8 +211,11 @@ final class WebImport: ObservableObject {
 
     /// 대기 중인 웹 사진 기록을 앨범의 사진과 짝짓는다. 붙인 장수를 돌려준다.
     ///
-    /// 1. 파일 지문(md5)이 같으면 같은 사진이다 — 이름이 바뀌었든 연사든 상관없이 정확하다.
-    /// 2. 지문을 못 구했거나 다르면(저장하면서 다시 압축된 사진) 이름 + 해상도 + 촬영 시각이 다 맞을 때만.
+    /// 1. 이름 + 해상도 + 촬영 시각이 다 맞는 사진이 하나뿐이고, 같은 시각·해상도의 다른 사진도 없으면 바로 붙인다.
+    ///    여기까지는 사진 파일을 읽지 않는다(내려받지도 않는다).
+    /// 2. 그걸로 가려지지 않는 것만 — 이름이 바뀐 사진, 연사처럼 같은 시각·해상도의 사진이 여럿인 경우 —
+    ///    파일 지문(md5)을 계산해서 가린다. 지문 계산은 파일을 통째로 읽어야 하고, iCloud 에만 있는 원본은
+    ///    내려받아야 하므로 꼭 필요한 후보에만 한다.
     @discardableResult
     func match(library: PhotoLibrary, store: CatalogStore, meta: MetaStore) async -> Int {
         guard !pending.isEmpty, !library.all.isEmpty, !matching else { return 0 }
@@ -223,71 +226,22 @@ final class WebImport: ObservableObject {
             let asset: PHAsset
             let shot: String?
             let size: String
+            var id: String { asset.localIdentifier }
         }
-        let seen = library.all.map { a in
-            Seen(asset: a, shot: a.creationDate.map { stamp.string(from: $0) }, size: WebMatch.size(a.pixelWidth, a.pixelHeight))
-        }
-
-        // 지문은 파일을 통째로 읽어야 나온다. 웹 기록과 해상도·촬영 시각(분·초)이 겹치는 사진만 뒤에서 계산한다.
-        let wanted = Set(pending.compactMap(\.md5))
-        if !wanted.isEmpty {
-            var sizes = Set<String>()
-            var marks = Set<String>()
-            for p in pending where p.md5 != nil {
-                if let size = p.probe.size { sizes.insert(size) }
-                if let shot = p.shotAt { marks.insert(String(shot.suffix(5))) }
-            }
-            let todo = seen.filter { s in
-                FileHasher.shared.cached(s.asset.localIdentifier) == nil && sizes.contains(s.size)
-                    && (s.shot.map { marks.contains(String($0.suffix(5))) } ?? false)
-            }.map(\.asset)
-            if !todo.isEmpty {
-                await Task.detached(priority: .utility) {
-                    DispatchQueue.concurrentPerform(iterations: todo.count) { i in _ = FileHasher.shared.md5(todo[i]) }
-                    FileHasher.shared.save()
-                }.value
-            }
-        }
-
-        var byHash: [String: Seen] = [:]
         var byName: [String: [Seen]] = [:]
         var byShot: [String: [Seen]] = [:]
-        for s in seen {
-            if let hash = FileHasher.shared.cached(s.asset.localIdentifier), byHash[hash] == nil { byHash[hash] = s }
-            if let name = meta.names[s.asset.localIdentifier] { byName[WebMatch.stem(name), default: []].append(s) }
-            if let shot = s.shot { byShot["\(shot)|\(s.size)", default: []].append(s) }
+        for a in library.all {
+            let seen = Seen(asset: a, shot: a.creationDate.map { stamp.string(from: $0) }, size: WebMatch.size(a.pixelWidth, a.pixelHeight))
+            if let name = meta.names[a.localIdentifier] { byName[WebMatch.stem(name), default: []].append(seen) }
+            if let shot = seen.shot { byShot["\(shot)|\(seen.size)", default: []].append(seen) }
         }
 
         var left: [Pending] = []
+        var hard: [Pending] = []
         var taken = Set<String>()
         var done = 0
-        for p in pending {
-            let probe = p.probe
-            var hit: PHAsset?
-            let named = (byName[probe.stem] ?? []).filter { !taken.contains($0.asset.localIdentifier) }
-            if let md5 = p.md5, let same = byHash[md5], !taken.contains(same.asset.localIdentifier) {
-                // 파일이 완전히 같다
-                hit = same.asset
-            } else if probe.shot != nil, probe.size != nil {
-                // 이름 + 해상도 + 촬영 시각
-                hit = named.first { WebMatch.fits(probe, stem: probe.stem, shot: $0.shot, size: $0.size, stamp: stamp) }?.asset
-                if hit == nil, p.md5 == nil, let shot = probe.shot, let size = probe.size {
-                    // 지문이 없는 옛 기록 — 촬영 시각·해상도가 같은 사진이 딱 하나일 때만
-                    let same = (byShot["\(shot)|\(size)"] ?? []).filter { !taken.contains($0.asset.localIdentifier) }
-                    if same.count == 1 { hit = same[0].asset }
-                }
-            } else if let size = probe.size {
-                // 촬영 시각이 없는 기록 — 이름과 해상도가 맞는 사진이 딱 하나일 때만
-                let same = named.filter { $0.size == size }
-                if same.count == 1 { hit = same[0].asset }
-            } else if named.count == 1 {
-                // 촬영 정보가 아예 없는 기록 — 앨범 안에 그 이름이 하나뿐일 때만
-                hit = named[0].asset
-            }
-            guard let asset = hit else {
-                left.append(p)
-                continue
-            }
+
+        func attach(_ p: Pending, _ asset: PHAsset) {
             taken.insert(asset.localIdentifier)
             store.update([library.key(for: asset)]) { r in
                 // 이 앱에서 이미 정한 것은 그대로 두고 빈 곳만 채운다
@@ -300,6 +254,68 @@ final class WebImport: ObservableObject {
             }
             done += 1
         }
+
+        // 1단계 — 파일을 읽지 않고 확실한 것만
+        for p in pending {
+            let probe = p.probe
+            let named = (byName[probe.stem] ?? []).filter { !taken.contains($0.id) }
+            if let shot = probe.shot, let size = probe.size {
+                let fitting = named.filter { WebMatch.fits(probe, stem: probe.stem, shot: $0.shot, size: $0.size, stamp: stamp) }
+                let siblings = byShot["\(shot)|\(size)"] ?? []
+                if fitting.count == 1, siblings.count <= 1 {
+                    attach(p, fitting[0].asset)
+                } else {
+                    hard.append(p)
+                }
+            } else if let size = probe.size {
+                // 촬영 시각이 없는 기록 — 이름과 해상도가 맞는 사진이 딱 하나일 때만
+                let same = named.filter { $0.size == size }
+                if same.count == 1 { attach(p, same[0].asset) } else { left.append(p) }
+            } else if named.count == 1 {
+                // 촬영 정보가 아예 없는 기록 — 앨범 안에 그 이름이 하나뿐일 때만
+                attach(p, named[0].asset)
+            } else {
+                left.append(p)
+            }
+        }
+
+        // 2단계 — 가려지지 않은 것만 지문으로
+        if !hard.isEmpty {
+            func candidates(_ p: Pending) -> [Seen] {
+                let probe = p.probe
+                guard let shot = probe.shot, let size = probe.size else { return [] }
+                let named = (byName[probe.stem] ?? []).filter { $0.size == size }
+                return (byShot["\(shot)|\(size)"] ?? []) + named.filter { n in !(byShot["\(shot)|\(size)"] ?? []).contains { $0.id == n.id } }
+            }
+            var todo: [String: PHAsset] = [:]
+            for p in hard where p.md5 != nil {
+                for c in candidates(p) where !taken.contains(c.id) && FileHasher.shared.cached(c.id) == nil { todo[c.id] = c.asset }
+            }
+            if !todo.isEmpty {
+                let assets = Array(todo.values)
+                await Task.detached(priority: .utility) {
+                    DispatchQueue.concurrentPerform(iterations: assets.count) { i in _ = FileHasher.shared.md5(assets[i]) }
+                    FileHasher.shared.save()
+                }.value
+            }
+            for p in hard {
+                let probe = p.probe
+                let pool = candidates(p).filter { !taken.contains($0.id) }
+                if let md5 = p.md5, let same = pool.first(where: { FileHasher.shared.cached($0.id) == md5 }) {
+                    // 파일이 완전히 같다
+                    attach(p, same.asset)
+                } else if let fit = pool.first(where: { WebMatch.fits(probe, stem: probe.stem, shot: $0.shot, size: $0.size, stamp: stamp) }) {
+                    // 지문은 다르지만(저장하면서 다시 압축된 사진) 이름·해상도·촬영 시각이 다 맞는다
+                    attach(p, fit.asset)
+                } else if p.md5 == nil, pool.count == 1 {
+                    // 지문이 없는 옛 기록 — 촬영 시각·해상도가 같은 사진이 딱 하나일 때만
+                    attach(p, pool[0].asset)
+                } else {
+                    left.append(p)
+                }
+            }
+        }
+
         if done > 0 {
             pending = left
             save()
